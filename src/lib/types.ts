@@ -2,6 +2,15 @@ export type Language = 'en' | 'hi'
 
 export type UserRole = 'admin' | 'staff'
 
+/* Firestore users/{uid} document. Roles live server-side only — the client
+   can never grant itself access; rules verify this doc on every request. */
+export type UserProfile = {
+  role: UserRole
+  name?: string
+  email?: string
+  phone?: string
+}
+
 export type EntryType = 'debit' | 'credit'
 
 export type PaymentMode = 'cash' | 'bank' | 'upi'

@@ -1,21 +1,69 @@
 import * as React from 'react'
-import { FileText, Home, Printer, Settings, Users } from 'lucide-react'
+import { Copy, FileText, Home, LogOut, Printer, Settings, Users } from 'lucide-react'
 import { CustomerSheet } from './components/app/customer-sheet'
 import { EntrySheet, type EntryDraft } from './components/app/entry-sheet'
+import { useAuth } from './lib/auth'
 import { useApp } from './lib/store'
 import type { Customer, EntryType } from './lib/types'
 import { cn } from './lib/utils'
+import { Button } from './components/ui/button'
 import { CollectionScreen } from './screens/collection'
 import { CustomersScreen } from './screens/customers'
 import { HomeScreen } from './screens/home'
 import { LedgerScreen } from './screens/ledger'
+import { LoginScreen } from './screens/login'
 import { ReportsScreen } from './screens/reports'
 import { SettingsScreen } from './screens/settings'
 
 type Tab = 'home' | 'customers' | 'collection' | 'reports' | 'settings'
 
+function Splash() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-background">
+      <div className="flex h-14 w-14 animate-pulse items-center justify-center rounded-2xl bg-hero text-[22px] font-semibold text-hero-foreground">
+        ₹
+      </div>
+    </div>
+  )
+}
+
+function NoAccessScreen() {
+  const { t } = useApp()
+  const { user, signOutUser } = useAuth()
+  const [copied, setCopied] = React.useState(false)
+
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-background px-5 text-foreground">
+      <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-border bg-card p-6 text-center animate-fade-up">
+        <h1 className="text-lg font-semibold">{t('noAccessTitle')}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t('noAccessBody')}</p>
+        {user?.email && <p className="mt-3 text-sm font-medium">{user.email}</p>}
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard.writeText(user?.uid ?? '')
+            setCopied(true)
+          }}
+          className="pressable mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-xs text-secondary-text hover:text-foreground"
+        >
+          <Copy className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">
+            {t('userId')}: <span className="tnum">{user?.uid}</span>
+          </span>
+        </button>
+        {copied && <p className="mt-1.5 text-xs text-credit animate-fade-in">{t('copied')}</p>}
+        <Button variant="secondary" className="mt-5 w-full" onClick={() => void signOutUser()}>
+          <LogOut className="h-4 w-4" />
+          {t('signOut')}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function App() {
-  const { t, customers } = useApp()
+  const { t, customers, isAdmin } = useApp()
+  const authState = useAuth()
   const [tab, setTab] = React.useState<Tab>('home')
   const [openCustomerId, setOpenCustomerId] = React.useState('')
   const [districtFilter, setDistrictFilter] = React.useState('')
@@ -27,6 +75,12 @@ function App() {
 
   const openCustomer = customers.find((customer) => customer.id === openCustomerId)
 
+  // staff see only the collection sheet (plus settings for language/sign-out)
+  const allowedTabs: Tab[] = isAdmin
+    ? ['home', 'customers', 'collection', 'reports', 'settings']
+    : ['collection', 'settings']
+  const activeTab: Tab = allowedTabs.includes(tab) ? tab : isAdmin ? 'home' : 'collection'
+
   function navigate(next: Tab) {
     setTab(next)
     setOpenCustomerId('')
@@ -36,20 +90,27 @@ function App() {
     setEntryDraft({ customerId, type })
   }
 
-  const navItems: Array<{ tab: Tab; label: string; icon: React.ReactNode }> = [
+  const allNavItems: Array<{ tab: Tab; label: string; icon: React.ReactNode }> = [
     { tab: 'home', label: t('home'), icon: <Home className="h-5 w-5" /> },
     { tab: 'customers', label: t('customers'), icon: <Users className="h-5 w-5" /> },
     { tab: 'collection', label: t('collection'), icon: <Printer className="h-5 w-5" /> },
     { tab: 'reports', label: t('reports'), icon: <FileText className="h-5 w-5" /> },
     { tab: 'settings', label: t('settings'), icon: <Settings className="h-5 w-5" /> },
   ]
+  const navItems = allNavItems.filter((item) => allowedTabs.includes(item.tab))
+
+  if (authState.mode === 'cloud' && authState.status !== 'ready') {
+    if (authState.status === 'signedOut') return <LoginScreen />
+    if (authState.status === 'noProfile') return <NoAccessScreen />
+    return <Splash />
+  }
 
   return (
     <div className="min-h-dvh bg-background text-foreground lg:flex">
       <aside className="hidden print:!hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col lg:gap-1.5 lg:border-r lg:border-border lg:bg-card lg:p-5">
         <p className="mb-6 px-3 pt-1 text-[19px] font-semibold tracking-tight text-primary-pressed">{t('appName')}</p>
         {navItems.map((item) => {
-          const active = tab === item.tab && !openCustomer
+          const active = activeTab === item.tab && !openCustomer
           return (
             <button
               key={item.tab}
@@ -74,7 +135,7 @@ function App() {
           <div className="flex items-center justify-between px-4 py-3">
             <h1 className="text-[17px] font-medium text-primary-pressed">{t('appName')}</h1>
             <span className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground">
-              {openCustomer ? t('ledger') : navItems.find((item) => item.tab === tab)?.label}
+              {openCustomer ? t('ledger') : navItems.find((item) => item.tab === activeTab)?.label}
             </span>
           </div>
         </header>
@@ -82,7 +143,7 @@ function App() {
         <main className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 print:p-0 lg:px-10 lg:pb-10 lg:pt-8">
           {!openCustomer && (
             <h1 className="mb-6 hidden text-[22px] font-semibold tracking-tight print:!hidden lg:block">
-              {navItems.find((item) => item.tab === tab)?.label}
+              {navItems.find((item) => item.tab === activeTab)?.label}
             </h1>
           )}
           {openCustomer ? (
@@ -93,7 +154,7 @@ function App() {
               onEditCustomer={() => setCustomerSheet({ open: true, editing: openCustomer })}
               onEntry={setEntryDraft}
             />
-          ) : tab === 'home' ? (
+          ) : activeTab === 'home' ? (
             <HomeScreen
               onOpenDistrict={(district) => {
                 setDistrictFilter(district)
@@ -102,16 +163,16 @@ function App() {
               onOpenCustomer={setOpenCustomerId}
               onNewEntry={startEntry}
             />
-          ) : tab === 'customers' ? (
+          ) : activeTab === 'customers' ? (
             <CustomersScreen
               districtFilter={districtFilter}
               onDistrictFilterChange={setDistrictFilter}
               onOpenCustomer={setOpenCustomerId}
               onAddCustomer={() => setCustomerSheet({ open: true, editing: null })}
             />
-          ) : tab === 'collection' ? (
+          ) : activeTab === 'collection' ? (
             <CollectionScreen />
-          ) : tab === 'reports' ? (
+          ) : activeTab === 'reports' ? (
             <ReportsScreen />
           ) : (
             <SettingsScreen />
@@ -122,7 +183,7 @@ function App() {
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden">
         <div className="mx-auto flex max-w-xl">
           {navItems.map((item) => {
-            const active = tab === item.tab && !openCustomer
+            const active = activeTab === item.tab && !openCustomer
             return (
               <button
                 key={item.tab}

@@ -6,31 +6,45 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function userProfile() {
+    // Role lives in users/{uid}, written only from the Firebase console —
+    // a client can never grant itself a role.
+    function profile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
+    function hasProfile() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isAdmin() {
-      return signedIn() && userProfile().data.role == 'admin';
+      return hasProfile() && profile().data.role == 'admin';
     }
 
     function isStaff() {
-      return signedIn() && userProfile().data.role in ['admin', 'staff'];
+      return hasProfile() && profile().data.role in ['admin', 'staff'];
     }
 
     match /users/{userId} {
-      allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      // users may read their own profile; admin may read all
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      // accounts are activated from the Firebase console only
+      allow create, update, delete: if false;
     }
 
     match /customers/{customerId} {
-      allow read, create: if isStaff();
-      allow update, delete: if isAdmin();
+      // staff need balances for the collection sheet; only admin mutates
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
     }
 
     match /ledgerEntries/{entryId} {
-      allow read, create: if isStaff();
-      allow update, delete: if isAdmin();
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // deny everything else
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
