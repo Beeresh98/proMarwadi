@@ -6,6 +6,11 @@ import { Input } from '../components/ui/form'
 import { Picker } from '../components/ui/picker'
 import { customerBalance } from '../lib/ledger'
 import { useApp } from '../lib/store'
+import { cn } from '../lib/utils'
+
+type SortMode = 'nameAsc' | 'nameDesc' | 'balanceHigh' | 'balanceLow'
+
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 
 export function CustomersScreen({
   districtFilter,
@@ -20,21 +25,36 @@ export function CustomersScreen({
 }) {
   const { t, customers, entries } = useApp()
   const [search, setSearch] = React.useState('')
+  const [letter, setLetter] = React.useState('')
+  const [sort, setSort] = React.useState<SortMode>('nameAsc')
 
   const districts = Array.from(new Set(customers.map((customer) => customer.district)))
     .filter(Boolean)
     .sort()
 
+  const lettersPresent = new Set(
+    customers
+      .filter((customer) => !districtFilter || customer.district === districtFilter)
+      .map((customer) => customer.name.trim().charAt(0).toUpperCase()),
+  )
+
   const query = search.trim().toLowerCase()
   const visible = customers
     .filter((customer) => !districtFilter || customer.district === districtFilter)
+    .filter((customer) => !letter || customer.name.trim().toUpperCase().startsWith(letter))
     .filter((customer) => {
       if (!query) return true
       return [customer.name, customer.phone, customer.city, customer.district].some((value) =>
         value.toLowerCase().includes(query),
       )
     })
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort((a, b) => {
+      if (sort === 'nameAsc') return a.name.localeCompare(b.name)
+      if (sort === 'nameDesc') return b.name.localeCompare(a.name)
+      const balanceA = customerBalance(a, entries)
+      const balanceB = customerBalance(b, entries)
+      return sort === 'balanceHigh' ? balanceB - balanceA : balanceA - balanceB
+    })
 
   return (
     <div className="space-y-5 animate-fade-up">
@@ -56,6 +76,54 @@ export function CustomersScreen({
           options={[
             { value: '', label: t('allDistricts') },
             ...districts.map((district) => ({ value: district, label: district })),
+          ]}
+        />
+      </div>
+
+      <div className="flex items-center gap-2.5">
+        <div className="no-scrollbar flex flex-1 items-center gap-1 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setLetter('')}
+            className={cn(
+              'pressable h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium',
+              letter === '' ? 'bg-primary text-primary-foreground' : 'text-secondary-text hover:bg-muted',
+            )}
+          >
+            {t('all')}
+          </button>
+          {ALPHABET.map((item) => {
+            const present = lettersPresent.has(item)
+            return (
+              <button
+                key={item}
+                type="button"
+                disabled={!present}
+                onClick={() => setLetter(letter === item ? '' : item)}
+                className={cn(
+                  'pressable h-8 w-7 shrink-0 rounded-lg text-xs font-medium',
+                  letter === item
+                    ? 'bg-primary text-primary-foreground'
+                    : present
+                      ? 'text-secondary-text hover:bg-muted'
+                      : 'text-border-strong',
+                )}
+              >
+                {item}
+              </button>
+            )
+          })}
+        </div>
+        <Picker
+          className="w-40 shrink-0"
+          align="right"
+          value={sort}
+          onChange={(value) => setSort(value as SortMode)}
+          options={[
+            { value: 'nameAsc', label: t('sortNameAsc') },
+            { value: 'nameDesc', label: t('sortNameDesc') },
+            { value: 'balanceHigh', label: t('sortBalanceHigh') },
+            { value: 'balanceLow', label: t('sortBalanceLow') },
           ]}
         />
       </div>

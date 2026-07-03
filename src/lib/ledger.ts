@@ -102,8 +102,10 @@ export function totalsForEntries(entries: LedgerEntry[]) {
   )
 }
 
-export function customerBalance(customer: Customer, entries: LedgerEntry[]) {
-  const totals = totalsForEntries(entries.filter((entry) => entry.customerId === customer.id))
+export function customerBalance(customer: Customer, entries: LedgerEntry[], upTo?: string) {
+  const totals = totalsForEntries(
+    entries.filter((entry) => entry.customerId === customer.id && (!upTo || entry.date <= upTo)),
+  )
   return customer.openingBalance + totals.debit - totals.credit
 }
 

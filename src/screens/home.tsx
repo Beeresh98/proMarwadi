@@ -1,4 +1,5 @@
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, MapPin } from 'lucide-react'
+import * as React from 'react'
+import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, MapPin } from 'lucide-react'
 import { Avatar, Balance } from '../components/app/money'
 import { Button } from '../components/ui/button'
 import { customerBalance, districtStats, entriesInRange, totalsForEntries } from '../lib/ledger'
@@ -22,6 +23,34 @@ export function HomeScreen({
   const districts = Array.from(new Set(customers.map((customer) => customer.district)))
     .filter(Boolean)
     .sort()
+
+  const carouselRef = React.useRef<HTMLDivElement>(null)
+  const [carousel, setCarousel] = React.useState({ page: 0, pages: 1 })
+
+  const updateCarousel = React.useCallback(() => {
+    const el = carouselRef.current
+    if (!el) return
+    const maxScroll = el.scrollWidth - el.clientWidth
+    const pages = Math.max(1, Math.ceil(el.scrollWidth / el.clientWidth))
+    // map against the real scrollable distance — max scroll is less than one
+    // full page width, so dividing by clientWidth never reaches the last page
+    const page = maxScroll > 0 ? Math.round((el.scrollLeft / maxScroll) * (pages - 1)) : 0
+    setCarousel((current) => (current.page === page && current.pages === pages ? current : { page, pages }))
+  }, [])
+
+  React.useEffect(() => {
+    updateCarousel()
+    window.addEventListener('resize', updateCarousel)
+    return () => window.removeEventListener('resize', updateCarousel)
+  }, [updateCarousel, districts.length])
+
+  function scrollToPage(page: number) {
+    const el = carouselRef.current
+    if (!el) return
+    const maxScroll = el.scrollWidth - el.clientWidth
+    const pages = Math.max(1, Math.ceil(el.scrollWidth / el.clientWidth))
+    el.scrollTo({ left: pages > 1 ? (page * maxScroll) / (pages - 1) : 0, behavior: 'smooth' })
+  }
   const topCustomers = [...customers]
     .sort((a, b) => Math.abs(customerBalance(b, entries)) - Math.abs(customerBalance(a, entries)))
     .slice(0, 5)
@@ -47,35 +76,79 @@ export function HomeScreen({
 
       <section>
         <h2 className="mb-3 text-[13px] font-medium text-secondary-text">{t('districts')}</h2>
-        <div className="stagger grid grid-cols-2 gap-3.5 lg:grid-cols-3">
-          {districts.map((district) => {
-            const stats = districtStats(district, customers, entries, range)
-            return (
+        <div className="relative">
+          {carousel.pages > 1 && (
+            <>
               <button
-                key={district}
                 type="button"
-                onClick={() => onOpenDistrict(district)}
-                className="pressable liftable rounded-[var(--radius-card)] border border-border/70 bg-fill p-4 text-left hover:border-primary-accent hover:bg-card"
+                aria-label="Previous"
+                disabled={carousel.page === 0}
+                onClick={() => scrollToPage(carousel.page - 1)}
+                className="pressable absolute -left-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-secondary-text shadow-[0_2px_10px_rgba(44,44,42,0.14)] hover:text-foreground disabled:opacity-40"
               >
-                <p className="flex items-center gap-1.5 text-[15px] font-medium">
-                  <MapPin className="h-3.5 w-3.5 text-primary" />
-                  {district}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {stats.customers} {stats.customers === 1 ? t('customerWord') : t('customersWord')}
-                </p>
-                <p
-                  className={cn(
-                    'tnum mt-2 text-[17px] font-medium',
-                    stats.receivable > 0 ? 'text-primary-pressed' : 'text-muted-foreground',
-                  )}
-                >
-                  {fmt(stats.receivable)}
-                </p>
+                <ChevronLeft className="h-4 w-4" />
               </button>
-            )
-          })}
+              <button
+                type="button"
+                aria-label="Next"
+                disabled={carousel.page === carousel.pages - 1}
+                onClick={() => scrollToPage(carousel.page + 1)}
+                className="pressable absolute -right-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-secondary-text shadow-[0_2px_10px_rgba(44,44,42,0.14)] hover:text-foreground disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </>
+          )}
+          <div
+            ref={carouselRef}
+            onScroll={updateCarousel}
+            className="no-scrollbar stagger -my-3 flex snap-x snap-mandatory gap-3.5 overflow-x-auto py-3"
+          >
+            {districts.map((district) => {
+              const stats = districtStats(district, customers, entries, range)
+              return (
+                <button
+                  key={district}
+                  type="button"
+                  onClick={() => onOpenDistrict(district)}
+                  className="pressable liftable w-[46%] shrink-0 snap-start rounded-[var(--radius-card)] border border-border/70 bg-fill p-4 text-left hover:border-primary-accent hover:bg-card sm:w-[31.5%]"
+                >
+                  <p className="flex items-center gap-1.5 text-[15px] font-medium">
+                    <MapPin className="h-3.5 w-3.5 text-primary" />
+                    {district}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {stats.customers} {stats.customers === 1 ? t('customerWord') : t('customersWord')}
+                  </p>
+                  <p
+                    className={cn(
+                      'tnum mt-2 text-[17px] font-medium',
+                      stats.receivable > 0 ? 'text-primary-pressed' : 'text-muted-foreground',
+                    )}
+                  >
+                    {fmt(stats.receivable)}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
         </div>
+        {carousel.pages > 1 && (
+          <div className="mt-3 flex justify-center gap-1.5">
+            {Array.from({ length: carousel.pages }).map((_, index) => (
+              <button
+                key={index}
+                type="button"
+                aria-label={`${t('districts')} ${index + 1}`}
+                onClick={() => scrollToPage(index)}
+                className={cn(
+                  'h-1.5 rounded-full transition-all duration-200',
+                  index === carousel.page ? 'w-5 bg-primary' : 'w-1.5 bg-border-strong hover:bg-muted-foreground',
+                )}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <section>

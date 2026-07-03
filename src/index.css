@@ -151,6 +151,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Horizontal scrollers (carousel, letter strip) scroll without a visible bar */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Tactile press for every interactive control */
 .pressable {
   transition:
@@ -196,6 +205,22 @@
 ::selection {
   background: #e1f5ee;
   color: #04342c;
+}
+
+/* Collection sheet printout */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+  .print-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,17 +1,18 @@
 import * as React from 'react'
-import { FileText, Home, Settings, Users } from 'lucide-react'
+import { FileText, Home, Printer, Settings, Users } from 'lucide-react'
 import { CustomerSheet } from './components/app/customer-sheet'
 import { EntrySheet, type EntryDraft } from './components/app/entry-sheet'
 import { useApp } from './lib/store'
 import type { Customer, EntryType } from './lib/types'
 import { cn } from './lib/utils'
+import { CollectionScreen } from './screens/collection'
 import { CustomersScreen } from './screens/customers'
 import { HomeScreen } from './screens/home'
 import { LedgerScreen } from './screens/ledger'
 import { ReportsScreen } from './screens/reports'
 import { SettingsScreen } from './screens/settings'
 
-type Tab = 'home' | 'customers' | 'reports' | 'settings'
+type Tab = 'home' | 'customers' | 'collection' | 'reports' | 'settings'
 
 function App() {
   const { t, customers } = useApp()
@@ -38,13 +39,14 @@ function App() {
   const navItems: Array<{ tab: Tab; label: string; icon: React.ReactNode }> = [
     { tab: 'home', label: t('home'), icon: <Home className="h-5 w-5" /> },
     { tab: 'customers', label: t('customers'), icon: <Users className="h-5 w-5" /> },
+    { tab: 'collection', label: t('collection'), icon: <Printer className="h-5 w-5" /> },
     { tab: 'reports', label: t('reports'), icon: <FileText className="h-5 w-5" /> },
     { tab: 'settings', label: t('settings'), icon: <Settings className="h-5 w-5" /> },
   ]
 
   return (
     <div className="min-h-dvh bg-background text-foreground lg:flex">
-      <aside className="hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col lg:gap-1.5 lg:border-r lg:border-border lg:bg-card lg:p-5">
+      <aside className="hidden print:!hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col lg:gap-1.5 lg:border-r lg:border-border lg:bg-card lg:p-5">
         <p className="mb-6 px-3 pt-1 text-[19px] font-semibold tracking-tight text-primary-pressed">{t('appName')}</p>
         {navItems.map((item) => {
           const active = tab === item.tab && !openCustomer
@@ -67,8 +69,8 @@ function App() {
         })}
       </aside>
 
-      <div className="mx-auto w-full max-w-xl flex-1 lg:max-w-3xl">
-        <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur lg:hidden">
+      <div className="mx-auto w-full max-w-xl flex-1 print:max-w-none lg:max-w-3xl">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur print:hidden lg:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <h1 className="text-[17px] font-medium text-primary-pressed">{t('appName')}</h1>
             <span className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground">
@@ -77,9 +79,9 @@ function App() {
           </div>
         </header>
 
-        <main className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 lg:px-10 lg:pb-10 lg:pt-8">
+        <main className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 print:p-0 lg:px-10 lg:pb-10 lg:pt-8">
           {!openCustomer && (
-            <h1 className="mb-6 hidden text-[22px] font-semibold tracking-tight lg:block">
+            <h1 className="mb-6 hidden text-[22px] font-semibold tracking-tight print:!hidden lg:block">
               {navItems.find((item) => item.tab === tab)?.label}
             </h1>
           )}
@@ -107,6 +109,8 @@ function App() {
               onOpenCustomer={setOpenCustomerId}
               onAddCustomer={() => setCustomerSheet({ open: true, editing: null })}
             />
+          ) : tab === 'collection' ? (
+            <CollectionScreen />
           ) : tab === 'reports' ? (
             <ReportsScreen />
           ) : (
@@ -115,7 +119,7 @@ function App() {
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden">
         <div className="mx-auto flex max-w-xl">
           {navItems.map((item) => {
             const active = tab === item.tab && !openCustomer

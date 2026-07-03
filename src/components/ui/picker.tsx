@@ -65,7 +65,9 @@ export function Popover({
         zIndex: 60,
         maxWidth: 'calc(100vw - 16px)',
       }
-      if (width === 'anchor') next.minWidth = Math.max(rect.width, 220)
+      // menu matches the trigger's width exactly so it never overflows
+      // narrow fields (e.g. the half-width City field inside a sheet)
+      if (width === 'anchor') next.width = rect.width
       else next.width = width
       if (align === 'right') next.right = Math.max(8, window.innerWidth - rect.right)
       else next.left = Math.max(8, rect.left)
@@ -102,6 +104,9 @@ export type PickerOption = {
   value: string
   label: string
   hint?: string
+  /* Renders as a highlighted action row (e.g. "+ Add new city") pinned below
+     the regular options, separated by a divider and exempt from search filtering. */
+  action?: boolean
 }
 
 export function Picker({
@@ -113,6 +118,7 @@ export function Picker({
   searchPlaceholder = '',
   className,
   align = 'left',
+  disabled = false,
 }: {
   value: string
   options: PickerOption[]
@@ -122,6 +128,7 @@ export function Picker({
   searchPlaceholder?: string
   className?: string
   align?: 'left' | 'right'
+  disabled?: boolean
 }) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
@@ -137,8 +144,10 @@ export function Picker({
 
   const selected = options.find((option) => option.value === value)
   const visible = query.trim()
-    ? options.filter((option) =>
-        `${option.label} ${option.hint ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
+    ? options.filter(
+        (option) =>
+          option.action ||
+          `${option.label} ${option.hint ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
       )
     : options
 
@@ -147,11 +156,12 @@ export function Picker({
       <button
         ref={anchorRef}
         type="button"
+        disabled={disabled}
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          'pressable flex h-12 w-full items-center justify-between gap-2 rounded-[var(--radius-control)] border border-input bg-card px-3.5 text-left text-[15px] hover:border-border-strong focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/40',
+          'pressable flex h-12 w-full items-center justify-between gap-2 rounded-[var(--radius-control)] border border-input bg-card px-3.5 text-left text-[15px] hover:border-border-strong focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45',
           open && 'border-primary ring-2 ring-ring/40',
         )}
       >
@@ -197,6 +207,8 @@ export function Picker({
                 className={cn(
                   'pressable flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-[15px] hover:bg-fill',
                   isSelected && 'bg-primary-tint text-primary-pressed',
+                  option.action &&
+                    'mt-1 rounded-t-none border-t border-border font-medium text-primary hover:bg-primary-tint',
                 )}
               >
                 <span className="min-w-0">

@@ -157,6 +157,13 @@ export function LedgerScreen({
                   <p className="tnum truncate text-xs text-muted-foreground">
                     {formatDisplayDate(entry.date, language)}
                     {entry.note && ` · ${entry.note}`}
+                    {entry.type === 'credit' && entry.paymentMode && (
+                      <span className="ml-1 rounded bg-credit-tint px-1 py-px text-[10px] font-medium text-credit">
+                        {t(entry.paymentMode)}
+                        {entry.paymentMode === 'bank' && entry.bankName && ` · ${entry.bankName}`}
+                        {entry.paymentMode === 'upi' && entry.upiApp && ` · ${entry.upiApp}`}
+                      </span>
+                    )}
                     {entry.isEdited && (
                       <span className="ml-1 rounded bg-muted px-1 py-px text-[10px] font-medium text-secondary-text">
                         {t('edited')} ×{entry.editCount}

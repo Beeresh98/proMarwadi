@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
-import type { EntryType, LedgerEntry } from '../../lib/types'
+import { upiApps, type EntryType, type LedgerEntry, type PaymentMode } from '../../lib/types'
 import { today } from '../../lib/ledger'
 import { useApp } from '../../lib/store'
 import { Button } from '../ui/button'
@@ -34,6 +34,9 @@ export function EntrySheet({
     type: 'debit' as EntryType,
     amount: '',
     note: '',
+    paymentMode: 'cash' as PaymentMode,
+    bankName: '',
+    upiApp: '',
   })
 
   React.useEffect(() => {
@@ -45,6 +48,10 @@ export function EntrySheet({
         type: editing.type,
         amount: String(editing.amount),
         note: editing.note ?? '',
+        // old entries have no mode — default to cash so the form stays valid
+        paymentMode: editing.paymentMode ?? 'cash',
+        bankName: editing.bankName ?? '',
+        upiApp: editing.upiApp ?? '',
       })
     } else {
       setForm({
@@ -53,6 +60,9 @@ export function EntrySheet({
         type: draft.type,
         amount: '',
         note: '',
+        paymentMode: 'cash',
+        bankName: '',
+        upiApp: '',
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,16 +72,26 @@ export function EntrySheet({
   if (editing && !isAdmin) return null
 
   const amount = Number(form.amount)
-  const valid = form.customerId && amount > 0
+  const isCredit = form.type === 'credit'
+  const modeValid =
+    !isCredit ||
+    form.paymentMode === 'cash' ||
+    (form.paymentMode === 'bank' ? form.bankName.trim().length > 0 : form.upiApp.length > 0)
+  const valid = Boolean(form.customerId) && amount > 0 && modeValid
 
   function submit() {
     if (!valid) return
+    const credit = form.type === 'credit'
     const input = {
       customerId: form.customerId,
       date: form.date,
       type: form.type,
       amount,
       note: form.note.trim(),
+      // explicit undefined so editing an entry replaces stale mode fields
+      paymentMode: credit ? form.paymentMode : undefined,
+      bankName: credit && form.paymentMode === 'bank' ? form.bankName.trim() : undefined,
+      upiApp: credit && form.paymentMode === 'upi' ? form.upiApp : undefined,
     }
     if (editing) updateEntry(editing.id, input)
     else addEntry(input)
@@ -140,6 +160,41 @@ export function EntrySheet({
             />
           </div>
         </Field>
+
+        {isCredit && (
+          <div className="grid gap-4 animate-fade-up">
+            <Field label={t('paymentMode')}>
+              <SegmentedControl
+                value={form.paymentMode}
+                onChange={(paymentMode) => setForm({ ...form, paymentMode })}
+                options={[
+                  { value: 'cash', label: t('cash'), activeClassName: 'text-credit' },
+                  { value: 'bank', label: t('bank'), activeClassName: 'text-credit' },
+                  { value: 'upi', label: t('upi'), activeClassName: 'text-credit' },
+                ]}
+              />
+            </Field>
+            {form.paymentMode === 'bank' && (
+              <Field label={t('bankName')} className="animate-fade-up">
+                <Input
+                  value={form.bankName}
+                  onChange={(event) => setForm({ ...form, bankName: event.target.value })}
+                  placeholder="SBI, HDFC…"
+                />
+              </Field>
+            )}
+            {form.paymentMode === 'upi' && (
+              <Field label={t('selectApp')} className="animate-fade-up">
+                <Picker
+                  value={form.upiApp}
+                  onChange={(upiApp) => setForm({ ...form, upiApp })}
+                  placeholder={t('selectApp')}
+                  options={upiApps.map((app) => ({ value: app, label: app }))}
+                />
+              </Field>
+            )}
+          </div>
+        )}
 
         <Field label={t('date')}>
           <DatePicker value={form.date} onChange={(date) => setForm({ ...form, date })} language={language} />

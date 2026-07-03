@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { dictionary, type TranslationKey } from './i18n'
 import { seedCustomers, seedEntries, today } from './ledger'
-import type { Customer, DateRange, EntryType, Language, LedgerEntry, UserRole } from './types'
+import type { Customer, DateRange, EntryType, Language, LedgerEntry, PaymentMode, UserRole } from './types'
 import { currentMonthRange } from './ledger'
 
 const currency = new Intl.NumberFormat('en-IN', {
@@ -43,6 +43,11 @@ export type EntryInput = {
   type: EntryType
   amount: number
   note: string
+  /* Always passed explicitly (undefined when not applicable) so that an
+     update replaces stale mode fields instead of keeping them via spread. */
+  paymentMode?: PaymentMode
+  bankName?: string
+  upiApp?: string
 }
 
 type AppStore = {

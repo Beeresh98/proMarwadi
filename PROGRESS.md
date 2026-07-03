@@ -1,6 +1,6 @@
 # ProMarwadi Development Progress
 
-**Last Updated:** 2 July 2026
+**Last Updated:** 3 July 2026
 
 ## Completed ✅
 
@@ -35,6 +35,9 @@
 - [x] JSON/CSV backup export
 - [x] Bilingual (English/Hindi) with Hinglish money language
 - [x] Admin/staff role toggle with permission checks
+- [x] Payment mode on credit entries (Cash/Bank/UPI with bank name + UPI app), badges in ledger
+- [x] City-wise collection sheet (print-optimized, blank amount-received boxes)
+- [x] City combobox with "+ Add new city" in customer form (typo-proof)
 
 ### Code Quality
 - [x] TypeScript strict mode

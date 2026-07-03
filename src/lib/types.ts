@@ -4,6 +4,11 @@ export type UserRole = 'admin' | 'staff'
 
 export type EntryType = 'debit' | 'credit'
 
+export type PaymentMode = 'cash' | 'bank' | 'upi'
+
+export const upiApps = ['GPay', 'PhonePe', 'Paytm', 'Amazon Pay', 'Other'] as const
+export type UpiApp = (typeof upiApps)[number]
+
 export type Customer = {
   id: string
   name: string
@@ -23,6 +28,10 @@ export type LedgerEntry = {
   type: EntryType
   amount: number
   note?: string
+  /* Credit entries only. Absent on old data — treat missing as plain payment. */
+  paymentMode?: PaymentMode
+  bankName?: string
+  upiApp?: string
   createdAt: string
   createdBy: string
   updatedAt?: string

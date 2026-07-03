@@ -1,11 +1,14 @@
 import * as React from 'react'
-import { AlertTriangle, Save } from 'lucide-react'
+import { AlertTriangle, ListFilter, Save } from 'lucide-react'
 import { findDuplicateCustomer } from '../../lib/ledger'
 import { useApp } from '../../lib/store'
 import type { Customer } from '../../lib/types'
 import { Button } from '../ui/button'
 import { Field, Input } from '../ui/form'
+import { Picker } from '../ui/picker'
 import { Sheet } from '../ui/sheet'
+
+const ADD_NEW = '__add-new__'
 
 const emptyForm = {
   name: '',
@@ -14,6 +17,82 @@ const emptyForm = {
   city: '',
   address: '',
   openingBalance: '0',
+}
+
+/* Dropdown of known values with a "+ Add new" action that swaps in a text
+   input. Used for both district and city so location entry stays typo-proof. */
+function LocationField({
+  label,
+  placeholder,
+  addLabel,
+  typePlaceholder,
+  backLabel,
+  value,
+  list,
+  newMode,
+  onNewModeChange,
+  onChange,
+  disabled = false,
+}: {
+  label: string
+  placeholder: string
+  addLabel: string
+  typePlaceholder: string
+  backLabel: string
+  value: string
+  list: string[]
+  newMode: boolean
+  onNewModeChange: (mode: boolean) => void
+  onChange: (value: string) => void
+  disabled?: boolean
+}) {
+  return (
+    <Field label={label}>
+      {newMode && !disabled ? (
+        <div className="relative animate-fade-up">
+          <Input
+            autoFocus={list.length > 0}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={typePlaceholder}
+            className={list.length > 0 ? 'pr-11' : undefined}
+          />
+          {list.length > 0 && (
+            <button
+              type="button"
+              aria-label={backLabel}
+              title={backLabel}
+              onClick={() => {
+                onNewModeChange(false)
+                onChange('')
+              }}
+              className="pressable absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ListFilter className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <Picker
+          value={value}
+          placeholder={placeholder}
+          disabled={disabled}
+          onChange={(next) => {
+            if (next === ADD_NEW) {
+              onNewModeChange(true)
+              onChange('')
+            } else {
+              onChange(next)
+            }
+          }}
+          options={[
+            ...list.map((item) => ({ value: item, label: item })),
+            { value: ADD_NEW, label: `+ ${addLabel}`, action: true },
+          ]}
+        />
+      )}
+    </Field>
+  )
 }
 
 export function CustomerSheet({
@@ -28,10 +107,31 @@ export function CustomerSheet({
   const { t, customers, addCustomer, updateCustomer } = useApp()
   const [form, setForm] = React.useState(emptyForm)
   const [duplicate, setDuplicate] = React.useState<Customer | null>(null)
+  const [newCityMode, setNewCityMode] = React.useState(false)
+  const [newDistrictMode, setNewDistrictMode] = React.useState(false)
+
+  const districts = React.useMemo(
+    () =>
+      [...new Set(customers.map((customer) => customer.district))].filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [customers],
+  )
+  // cities belong to the selected district — a new district starts with none
+  const scopedCities = React.useMemo(
+    () =>
+      [...new Set(customers.filter((customer) => customer.district === form.district).map((customer) => customer.city))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [customers, form.district],
+  )
 
   React.useEffect(() => {
     if (!open) return
     setDuplicate(null)
+    setNewDistrictMode(editing ? !districts.includes(editing.district) : districts.length === 0)
+    const editingCities = editing
+      ? customers.filter((customer) => customer.district === editing.district).map((customer) => customer.city)
+      : []
+    setNewCityMode(editing ? !editingCities.includes(editing.city) : false)
     setForm(
       editing
         ? {
@@ -44,6 +144,7 @@ export function CustomerSheet({
           }
         : emptyForm,
     )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing])
 
   const valid = form.name.trim() && form.district.trim() && form.city.trim()
@@ -96,12 +197,36 @@ export function CustomerSheet({
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label={t('district')}>
-            <Input value={form.district} onChange={(event) => setForm({ ...form, district: event.target.value })} />
-          </Field>
-          <Field label={t('city')}>
-            <Input value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
-          </Field>
+          <LocationField
+            label={t('district')}
+            placeholder={t('selectDistrict')}
+            addLabel={t('addNewDistrict')}
+            typePlaceholder={t('typeDistrictName')}
+            backLabel={t('backToList')}
+            value={form.district}
+            list={districts}
+            newMode={newDistrictMode}
+            onNewModeChange={setNewDistrictMode}
+            onChange={(district) => {
+              setForm((current) =>
+                current.district === district ? current : { ...current, district, city: '' },
+              )
+              setNewCityMode(false)
+            }}
+          />
+          <LocationField
+            label={t('city')}
+            placeholder={t('selectCity')}
+            addLabel={t('addNewCity')}
+            typePlaceholder={t('typeCityName')}
+            backLabel={t('backToList')}
+            value={form.city}
+            list={scopedCities}
+            disabled={!form.district.trim()}
+            newMode={newCityMode || scopedCities.length === 0}
+            onNewModeChange={setNewCityMode}
+            onChange={(city) => setForm((current) => ({ ...current, city }))}
+          />
         </div>
         <Field label={t('address')}>
           <Input value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
