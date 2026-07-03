@@ -1,11 +1,41 @@
 import * as React from 'react'
-import { collection, deleteDoc, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore'
+import { arrayUnion, collection, deleteDoc, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore'
 import { useAuth } from './auth'
 import { db, isFirebaseConfigured } from './firebase'
 import { dictionary, type TranslationKey } from './i18n'
 import { seedCustomers, seedEntries, today } from './ledger'
-import type { Customer, DateRange, EntryType, Language, LedgerEntry, PaymentMode, UserRole } from './types'
+import type {
+  Customer,
+  DateRange,
+  EntryType,
+  Language,
+  LedgerEntry,
+  LocationDirectory,
+  PaymentMode,
+  UserRole,
+} from './types'
 import { currentMonthRange } from './ledger'
+
+const emptyLocations: LocationDirectory = { districts: [], cities: {} }
+
+function deriveLocations(customers: Customer[]): LocationDirectory {
+  const districts: string[] = []
+  const cities: Record<string, string[]> = {}
+  for (const customer of customers) {
+    if (customer.district && !districts.includes(customer.district)) districts.push(customer.district)
+    if (customer.district && customer.city) {
+      const list = cities[customer.district] ?? (cities[customer.district] = [])
+      if (!list.includes(customer.city)) list.push(customer.city)
+    }
+  }
+  return { districts, cities }
+}
+
+function unionInto(list: string[] | undefined, value: string): string[] {
+  const trimmed = value.trim()
+  if (!trimmed) return list ?? []
+  return list?.includes(trimmed) ? list : [...(list ?? []), trimmed]
+}
 
 const currency = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -78,6 +108,9 @@ type AppStore = {
   updateEntry: (id: string, input: EntryInput) => void
   deleteEntry: (id: string) => void
   importLocalToCloud: () => Promise<number>
+  /* Every district/city ever entered — survives deleting the customers that used it. */
+  knownDistricts: string[]
+  citiesFor: (district: string) => string[]
 }
 
 const AppContext = React.createContext<AppStore | null>(null)
@@ -99,6 +132,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [entries, setEntries] = React.useState<LedgerEntry[]>(() =>
     isFirebaseConfigured ? [] : loadStored('promarwadi-entries', seedEntries),
   )
+  const [locations, setLocations] = React.useState<LocationDirectory>(() =>
+    isFirebaseConfigured
+      ? emptyLocations
+      : loadStored('promarwadi-locations', deriveLocations(seedCustomers)),
+  )
   const [range, setRange] = React.useState<DateRange>(currentMonthRange)
 
   // Role is server-driven in cloud mode; the local toggle only exists in demo
@@ -113,9 +151,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const unsubEntries = onSnapshot(collection(db, 'ledgerEntries'), (snapshot) =>
       setEntries(snapshot.docs.map((item) => item.data() as LedgerEntry)),
     )
+    const unsubLocations = onSnapshot(doc(db, 'meta', 'locations'), (snapshot) =>
+      setLocations(snapshot.exists() ? (snapshot.data() as LocationDirectory) : emptyLocations),
+    )
     return () => {
       unsubCustomers()
       unsubEntries()
+      unsubLocations()
     }
   }, [cloudActive])
 
@@ -140,6 +182,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveStored('promarwadi-entries', next)
   }, [])
 
+  const recordLocation = React.useCallback(
+    (district: string, city: string) => {
+      if (!district.trim()) return
+      if (cloudActive && db) {
+        void setDoc(
+          doc(db, 'meta', 'locations'),
+          {
+            districts: arrayUnion(district.trim()),
+            ...(city.trim() ? { cities: { [district.trim()]: arrayUnion(city.trim()) } } : {}),
+          },
+          { merge: true },
+        )
+        return
+      }
+      setLocations((current) => {
+        const next: LocationDirectory = {
+          districts: unionInto(current.districts, district),
+          cities: city.trim()
+            ? { ...current.cities, [district.trim()]: unionInto(current.cities[district.trim()], city) }
+            : current.cities,
+        }
+        saveStored('promarwadi-locations', next)
+        return next
+      })
+    },
+    [cloudActive],
+  )
+
   const store: AppStore = {
     language,
     setLanguage,
@@ -157,6 +227,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const customer: Customer = { id: makeId('customer'), ...input, createdAt: today }
       if (cloudActive && db) void setDoc(doc(db, 'customers', customer.id), stripUndefined(customer))
       else persistCustomers([...customers, customer])
+      recordLocation(input.district, input.city)
       return customer
     },
     updateCustomer: (id, input) => {
@@ -165,6 +236,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const next = { ...existing, ...input, updatedAt: today }
       if (cloudActive && db) void setDoc(doc(db, 'customers', id), stripUndefined(next))
       else persistCustomers(customers.map((customer) => (customer.id === id ? next : customer)))
+      recordLocation(input.district, input.city)
     },
     deleteCustomer: (id) => {
       if (cloudActive && db) {
@@ -228,9 +300,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         batch.set(doc(db, 'ledgerEntries', entry.id), stripUndefined(entry))
         count += 1
       }
-      if (count > 0) await batch.commit()
+      const localLocations = loadStored<LocationDirectory>('promarwadi-locations', emptyLocations)
+      const hasLocations = localLocations.districts.length > 0
+      if (hasLocations) {
+        batch.set(
+          doc(db, 'meta', 'locations'),
+          {
+            districts: arrayUnion(...localLocations.districts),
+            cities: Object.fromEntries(
+              Object.entries(localLocations.cities).map(([district, list]) => [district, arrayUnion(...list)]),
+            ),
+          },
+          { merge: true },
+        )
+      }
+      if (count > 0 || hasLocations) await batch.commit()
       return count
     },
+    knownDistricts: [...locations.districts].sort((a, b) => a.localeCompare(b)),
+    citiesFor: (district) => [...(locations.cities[district] ?? [])].sort((a, b) => a.localeCompare(b)),
   }
 
   return <AppContext.Provider value={store}>{children}</AppContext.Provider>

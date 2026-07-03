@@ -42,6 +42,12 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // known district/city names, persisted independently of customer records
+    match /meta/locations {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
     // deny everything else
     match /{document=**} {
       allow read, write: if false;

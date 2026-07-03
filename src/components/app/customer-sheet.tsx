@@ -104,25 +104,24 @@ export function CustomerSheet({
   editing: Customer | null
   onClose: () => void
 }) {
-  const { t, customers, addCustomer, updateCustomer } = useApp()
+  const { t, customers, addCustomer, updateCustomer, knownDistricts, citiesFor } = useApp()
   const [form, setForm] = React.useState(emptyForm)
   const [duplicate, setDuplicate] = React.useState<Customer | null>(null)
   const [newCityMode, setNewCityMode] = React.useState(false)
   const [newDistrictMode, setNewDistrictMode] = React.useState(false)
 
-  const districts = React.useMemo(
-    () =>
-      [...new Set(customers.map((customer) => customer.district))].filter(Boolean).sort((a, b) => a.localeCompare(b)),
-    [customers],
-  )
-  // cities belong to the selected district — a new district starts with none
-  const scopedCities = React.useMemo(
-    () =>
-      [...new Set(customers.filter((customer) => customer.district === form.district).map((customer) => customer.city))]
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b)),
-    [customers, form.district],
-  )
+  // merge the persisted directory with whatever's on current customers, so a
+  // district/city never disappears just because its last customer was deleted
+  const districts = React.useMemo(() => {
+    const fromCustomers = customers.map((customer) => customer.district)
+    return [...new Set([...knownDistricts, ...fromCustomers])].filter(Boolean).sort((a, b) => a.localeCompare(b))
+  }, [customers, knownDistricts])
+  const scopedCities = React.useMemo(() => {
+    const fromCustomers = customers
+      .filter((customer) => customer.district === form.district)
+      .map((customer) => customer.city)
+    return [...new Set([...citiesFor(form.district), ...fromCustomers])].filter(Boolean).sort((a, b) => a.localeCompare(b))
+  }, [customers, form.district, citiesFor])
 
   React.useEffect(() => {
     if (!open) return

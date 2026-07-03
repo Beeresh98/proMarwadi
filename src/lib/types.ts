@@ -11,6 +11,14 @@ export type UserProfile = {
   phone?: string
 }
 
+/* Districts/cities a user has ever typed in, persisted independently of
+   customer records so a name doesn't vanish from the dropdown just because
+   the last customer referencing it got deleted. */
+export type LocationDirectory = {
+  districts: string[]
+  cities: Record<string, string[]>
+}
+
 export type EntryType = 'debit' | 'credit'
 
 export type PaymentMode = 'cash' | 'bank' | 'upi'
