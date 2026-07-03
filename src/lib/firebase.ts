@@ -16,6 +16,18 @@ const firebaseConfig = {
 
 export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId)
 
+/* getFirestore(app) with no second argument always requests the database ID
+   "(default)" (reserved, with parentheses). This project's Firestore database
+   was created with the literal ID "default" (no parens) instead, so the SDK
+   could never find it — every read/write failed as "Database not found",
+   regardless of rules or caching. Confirmed via the console URL
+   (.../databases/default/...; the true reserved default shows as -default-). */
+const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || 'default'
+
 export const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null
 export const auth = firebaseApp ? getAuth(firebaseApp) : null
-export const db = firebaseApp ? getFirestore(firebaseApp) : null
+export const db = firebaseApp
+  ? firestoreDatabaseId
+    ? getFirestore(firebaseApp, firestoreDatabaseId)
+    : getFirestore(firebaseApp)
+  : null
