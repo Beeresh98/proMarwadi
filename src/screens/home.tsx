@@ -2,6 +2,7 @@ import * as React from 'react'
 import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, MapPin } from 'lucide-react'
 import { Avatar, Balance } from '../components/app/money'
 import { Button } from '../components/ui/button'
+import { formatDisplayDate } from '../components/ui/date-picker'
 import { customerBalance, districtStats, entriesInRange, totalsForEntries } from '../lib/ledger'
 import { useApp } from '../lib/store'
 import type { EntryType } from '../lib/types'
@@ -16,7 +17,7 @@ export function HomeScreen({
   onOpenCustomer: (customerId: string) => void
   onNewEntry: (type: EntryType) => void
 }) {
-  const { t, fmt, customers, entries, range } = useApp()
+  const { t, fmt, language, customers, entries, range, preferences } = useApp()
 
   const totalReceivable = customers.reduce((sum, customer) => sum + customerBalance(customer, entries), 0)
   const monthTotals = totalsForEntries(entriesInRange(entries, range))
@@ -54,6 +55,12 @@ export function HomeScreen({
   const topCustomers = [...customers]
     .sort((a, b) => Math.abs(customerBalance(b, entries)) - Math.abs(customerBalance(a, entries)))
     .slice(0, 5)
+
+  // admin preference decides the landing highlight: highest balances or latest activity
+  const lastEntries = [...entries]
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 10)
+    .map((entry) => ({ entry, customer: customers.find((customer) => customer.id === entry.customerId) }))
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -151,29 +158,64 @@ export function HomeScreen({
         )}
       </section>
 
-      <section>
-        <h2 className="mb-3 text-[13px] font-medium text-secondary-text">{t('recentCustomers')}</h2>
-        <div className="stagger rounded-[var(--radius-card)] border border-border bg-card px-4">
-          {topCustomers.map((customer) => (
-            <button
-              key={customer.id}
-              type="button"
-              onClick={() => onOpenCustomer(customer.id)}
-              className="pressable group flex w-full items-center gap-3.5 border-b border-border py-3.5 text-left last:border-b-0"
-            >
-              <Avatar name={customer.name} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-medium">{customer.name}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {customer.city} · {customer.district}
-                </p>
-              </div>
-              <Balance amount={customerBalance(customer, entries)} amountClassName="text-[15px]" />
-              <ChevronRight className="h-4 w-4 shrink-0 text-border-strong transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
-            </button>
-          ))}
-        </div>
-      </section>
+      {preferences.landingPage === 'lastEntries' ? (
+        <section>
+          <h2 className="mb-3 text-[13px] font-medium text-secondary-text">{t('recentEntries')}</h2>
+          <div className="stagger rounded-[var(--radius-card)] border border-border bg-card px-4">
+            {lastEntries.map(({ entry, customer }) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => customer && onOpenCustomer(customer.id)}
+                className="pressable group flex w-full items-center gap-3.5 border-b border-border py-3.5 text-left last:border-b-0"
+              >
+                <Avatar name={customer?.name ?? '?'} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-medium">{customer?.name ?? '—'}</p>
+                  <p className="tnum truncate text-xs text-muted-foreground">
+                    {formatDisplayDate(entry.date, language, preferences.dateFormat)}
+                    {entry.note && ` · ${entry.note}`}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    'tnum shrink-0 text-[15px] font-medium',
+                    entry.type === 'debit' ? 'text-debit' : 'text-credit',
+                  )}
+                >
+                  {entry.type === 'debit' ? '−' : '+'}
+                  {fmt(entry.amount)}
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-border-strong transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <section>
+          <h2 className="mb-3 text-[13px] font-medium text-secondary-text">{t('recentCustomers')}</h2>
+          <div className="stagger rounded-[var(--radius-card)] border border-border bg-card px-4">
+            {topCustomers.map((customer) => (
+              <button
+                key={customer.id}
+                type="button"
+                onClick={() => onOpenCustomer(customer.id)}
+                className="pressable group flex w-full items-center gap-3.5 border-b border-border py-3.5 text-left last:border-b-0"
+              >
+                <Avatar name={customer.name} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-medium">{customer.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {customer.city} · {customer.district}
+                  </p>
+                </div>
+                <Balance amount={customerBalance(customer, entries)} amountClassName="text-[15px]" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-border-strong transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 -mx-4 flex gap-3 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-2 pt-3 lg:bottom-6">
         <Button

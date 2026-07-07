@@ -11,6 +11,7 @@ import {
 import type { EntryDraft } from '../components/app/entry-sheet'
 import { Button } from '../components/ui/button'
 import { DatePicker, formatDisplayDate } from '../components/ui/date-picker'
+import { SegmentedControl } from '../components/ui/picker'
 import { ConfirmDialog } from '../components/ui/sheet'
 import { customerBalance, ledgerRows } from '../lib/ledger'
 import { exportCustomerLedgerPdf } from '../lib/pdf'
@@ -28,13 +29,20 @@ export function LedgerScreen({
   onEditCustomer: () => void
   onEntry: (draft: EntryDraft) => void
 }) {
-  const { t, fmt, language, customers, entries, range, setRange, isAdmin, deleteCustomer, deleteEntry } = useApp()
+  const { t, fmt, language, customers, entries, range, setRange, isAdmin, deleteCustomer, deleteEntry, preferences } = useApp()
   const [confirm, setConfirm] = React.useState<{ kind: 'customer' | 'entry'; id: string } | null>(null)
+  // staff default to the customer's last 10 transactions; the range filter is opt-in
+  const [staffView, setStaffView] = React.useState<'last10' | 'range'>('last10')
 
   const customer = customers.find((item) => item.id === customerId)
   if (!customer) return null
 
-  const rows = ledgerRows(customer, entries, range)
+  const showLast10 = !isAdmin && staffView === 'last10'
+
+  // ledgerRows is chronological (needed for the running-balance math and the
+  // PDF export); reverse only for this on-screen list so the latest entry is first
+  const rows = ledgerRows(customer, entries, showLast10 ? { from: '0000-01-01', to: '9999-12-31' } : range)
+  const displayRows = showLast10 ? [...rows].slice(-10).reverse() : [...rows].reverse()
   const balance = customerBalance(customer, entries)
 
   return (
@@ -95,32 +103,48 @@ export function LedgerScreen({
             {balance > 0 ? t('owesYou') : balance < 0 ? t('youOwe') : t('settled')}
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="border-transparent bg-white/10 text-white hover:bg-white/20 hover:border-transparent"
-          onClick={() => exportCustomerLedgerPdf(customer, entries, range)}
-        >
-          <FileText className="h-4 w-4" />
-          PDF
-        </Button>
+        {isAdmin && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="border-transparent bg-white/10 text-white hover:bg-white/20 hover:border-transparent"
+            onClick={() => exportCustomerLedgerPdf(customer, entries, range)}
+          >
+            <FileText className="h-4 w-4" />
+            PDF
+          </Button>
+        )}
       </section>
 
-      <div className="grid grid-cols-2 gap-2.5">
-        <div>
-          <p className="mb-1 text-[11px] font-medium text-muted-foreground">{t('from')}</p>
-          <DatePicker value={range.from} onChange={(from) => setRange({ ...range, from })} language={language} />
+      {!isAdmin && (
+        <SegmentedControl<'last10' | 'range'>
+          value={staffView}
+          onChange={setStaffView}
+          options={[
+            { value: 'last10', label: t('last10') },
+            { value: 'range', label: t('dateRange') },
+          ]}
+        />
+      )}
+
+      {!showLast10 && (
+        <div className="grid grid-cols-2 gap-2.5 animate-fade-up">
+          <div>
+            <p className="mb-1 text-[11px] font-medium text-muted-foreground">{t('from')}</p>
+            <DatePicker value={range.from} onChange={(from) => setRange({ ...range, from })} language={language} dateFormat={preferences.dateFormat} />
+          </div>
+          <div>
+            <p className="mb-1 text-[11px] font-medium text-muted-foreground">{t('to')}</p>
+            <DatePicker
+              value={range.to}
+              onChange={(to) => setRange({ ...range, to })}
+              language={language}
+              dateFormat={preferences.dateFormat}
+              align="right"
+            />
+          </div>
         </div>
-        <div>
-          <p className="mb-1 text-[11px] font-medium text-muted-foreground">{t('to')}</p>
-          <DatePicker
-            value={range.to}
-            onChange={(to) => setRange({ ...range, to })}
-            language={language}
-            align="right"
-          />
-        </div>
-      </div>
+      )}
 
       <section className="rounded-[var(--radius-card)] border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5 text-xs text-muted-foreground">
@@ -128,7 +152,7 @@ export function LedgerScreen({
             {t('openingBalance')}: <span className="tnum">{fmt(customer.openingBalance)}</span>
           </span>
           <span className="tnum">
-            {rows.length} {t('entries')}
+            {displayRows.length} {t('entries')}
           </span>
         </div>
 
@@ -136,7 +160,7 @@ export function LedgerScreen({
           <p className="px-4 py-10 text-center text-sm text-muted-foreground animate-fade-in">{t('noRows')}</p>
         ) : (
           <div className="stagger px-4">
-            {rows.map((entry) => (
+            {displayRows.map((entry) => (
               <div key={entry.id} className="group flex items-center gap-3 border-b border-border py-3 last:border-b-0">
                 <div
                   className={cn(
@@ -155,7 +179,7 @@ export function LedgerScreen({
                     {entry.type === 'debit' ? '−' : '+'} {fmt(entry.amount)}
                   </p>
                   <p className="tnum truncate text-xs text-muted-foreground">
-                    {formatDisplayDate(entry.date, language)}
+                    {formatDisplayDate(entry.date, language, preferences.dateFormat)}
                     {entry.note && ` · ${entry.note}`}
                     {entry.type === 'credit' && entry.paymentMode && (
                       <span className="ml-1 rounded bg-credit-tint px-1 py-px text-[10px] font-medium text-credit">
@@ -202,22 +226,35 @@ export function LedgerScreen({
       </section>
 
       <section className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 flex gap-3 pb-1 lg:bottom-4">
-        <Button
-          variant="debit"
-          className="flex-1 shadow-[0_8px_20px_rgba(163,45,45,0.18)]"
-          onClick={() => onEntry({ customerId: customer.id, type: 'debit' })}
-        >
-          <ArrowUpRight className="h-4 w-4" />
-          {t('youGave')} −
-        </Button>
-        <Button
-          variant="credit"
-          className="flex-1 shadow-[0_8px_20px_rgba(59,109,17,0.22)]"
-          onClick={() => onEntry({ customerId: customer.id, type: 'credit' })}
-        >
-          <ArrowDownLeft className="h-4 w-4" />
-          {t('youGot')} +
-        </Button>
+        {isAdmin ? (
+          <>
+            <Button
+              variant="debit"
+              className="flex-1 shadow-[0_8px_20px_rgba(163,45,45,0.18)]"
+              onClick={() => onEntry({ customerId: customer.id, type: 'debit' })}
+            >
+              <ArrowUpRight className="h-4 w-4" />
+              {t('youGave')} −
+            </Button>
+            <Button
+              variant="credit"
+              className="flex-1 shadow-[0_8px_20px_rgba(59,109,17,0.22)]"
+              onClick={() => onEntry({ customerId: customer.id, type: 'credit' })}
+            >
+              <ArrowDownLeft className="h-4 w-4" />
+              {t('youGot')} +
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="credit"
+            className="flex-1 font-semibold shadow-[0_8px_20px_rgba(59,109,17,0.22)]"
+            onClick={() => onEntry({ customerId: customer.id, type: 'credit' })}
+          >
+            <ArrowDownLeft className="h-4 w-4" />
+            {t('receivePayment')}
+          </Button>
+        )}
       </section>
 
       <ConfirmDialog

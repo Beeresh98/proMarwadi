@@ -1,19 +1,27 @@
 import * as React from 'react'
 import { arrayUnion, collection, deleteDoc, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore'
 import { useAuth } from './auth'
-import { db, isFirebaseConfigured } from './firebase'
+import { createAuthAccount, db, isFirebaseConfigured } from './firebase'
 import { dictionary, type TranslationKey } from './i18n'
 import { seedCustomers, seedEntries, today } from './ledger'
 import type {
+  AppPreferences,
   Customer,
   DateRange,
   EntryType,
   Language,
   LedgerEntry,
   LocationDirectory,
+  PaymentAccount,
+  PaymentAccountType,
   PaymentMode,
+  Route,
+  StaffAccount,
+  StaffType,
+  UserProfile,
   UserRole,
 } from './types'
+import { defaultPreferences } from './types'
 import { currentMonthRange } from './ledger'
 
 const emptyLocations: LocationDirectory = { districts: [], cities: {} }
@@ -72,7 +80,22 @@ export type CustomerInput = {
   district: string
   city: string
   address: string
+  /* Empty string means "no route" — normalized to undefined before saving. */
+  routeId: string
   openingBalance: number
+}
+
+export type PaymentAccountInput = {
+  type: PaymentAccountType
+  name: string
+  detail: string
+}
+
+export type StaffInput = {
+  name: string
+  phone: string
+  staffType: StaffType
+  allowedRouteIds: string[]
 }
 
 export type EntryInput = {
@@ -111,6 +134,33 @@ type AppStore = {
   /* Every district/city ever entered — survives deleting the customers that used it. */
   knownDistricts: string[]
   citiesFor: (district: string) => string[]
+  routes: Route[]
+  addRoute: (name: string) => Route
+  updateRoute: (id: string, name: string) => void
+  deleteRoute: (id: string) => void
+  routeName: (routeId: string | undefined) => string
+  assignCustomersToRoute: (customerIds: string[], routeId: string) => void
+  paymentAccounts: PaymentAccount[]
+  defaultPaymentAccount: PaymentAccount | null
+  addPaymentAccount: (input: PaymentAccountInput) => void
+  updatePaymentAccount: (id: string, input: PaymentAccountInput) => void
+  deletePaymentAccount: (id: string) => void
+  setDefaultPaymentAccount: (id: string) => void
+  /* Admin-only, cloud-only: staff account management. The list is empty for
+     non-admins (the users collection subscription never starts). */
+  staffAccounts: StaffAccount[]
+  addStaff: (email: string, password: string, input: StaffInput) => Promise<void>
+  updateStaff: (uid: string, input: StaffInput) => void
+  deleteStaff: (uid: string) => void
+  /* Staff only: routes allocated to the signed-in account. */
+  allowedRouteIds: string[]
+  preferences: AppPreferences
+  setPreferences: (next: Partial<AppPreferences>) => void
+  /* Firestore error code of the most recent failed cloud write ('' = none).
+     Writes are fire-and-forget for snappy UI, so failures land here instead
+     of dying silently as unhandled rejections. */
+  syncError: string
+  clearSyncError: () => void
 }
 
 const AppContext = React.createContext<AppStore | null>(null)
@@ -137,11 +187,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ? emptyLocations
       : loadStored('promarwadi-locations', deriveLocations(seedCustomers)),
   )
+  const [routes, setRoutes] = React.useState<Route[]>(() =>
+    isFirebaseConfigured ? [] : loadStored<Route[]>('promarwadi-routes', []),
+  )
+  const [paymentAccounts, setPaymentAccounts] = React.useState<PaymentAccount[]>(() =>
+    isFirebaseConfigured ? [] : loadStored<PaymentAccount[]>('promarwadi-payment-accounts', []),
+  )
+  // Preferences load from localStorage in both modes so the UI doesn't flash
+  // defaults while the cloud snapshot arrives; cloud stays the source of truth.
+  const [preferences, setPreferencesState] = React.useState<AppPreferences>(() => ({
+    ...defaultPreferences,
+    ...loadStored<Partial<AppPreferences>>('promarwadi-preferences', {}),
+  }))
+  const [staffAccounts, setStaffAccounts] = React.useState<StaffAccount[]>([])
   const [range, setRange] = React.useState<DateRange>(currentMonthRange)
+  const [syncError, setSyncError] = React.useState('')
+
+  const cloudWrite = React.useCallback((write: Promise<unknown>) => {
+    write.catch((error: unknown) => {
+      const code = (error as { code?: string })?.code ?? ''
+      setSyncError(code || 'unknown')
+    })
+  }, [])
 
   // Role is server-driven in cloud mode; the local toggle only exists in demo
   const role: UserRole = cloudActive ? (auth.profile?.role ?? 'staff') : localRole
   const actorName = cloudActive ? (auth.profile?.name || auth.user?.email || role) : role
+
+  /* Staff scoping: in cloud mode a staff account only sees the routes it was
+     allocated and the customers/entries inside them. Applied here, centrally,
+     so every screen is restricted automatically. Demo mode stays unscoped
+     (its role toggle has no per-user allocation). */
+  const allowedRouteIds = React.useMemo(
+    () => auth.profile?.allowedRouteIds ?? [],
+    [auth.profile],
+  )
+  const staffScoped = cloudActive && role === 'staff'
+  const visibleCustomers = React.useMemo(
+    () =>
+      staffScoped
+        ? customers.filter((customer) => customer.routeId && allowedRouteIds.includes(customer.routeId))
+        : customers,
+    [customers, staffScoped, allowedRouteIds],
+  )
+  const visibleEntries = React.useMemo(() => {
+    if (!staffScoped) return entries
+    const ids = new Set(visibleCustomers.map((customer) => customer.id))
+    return entries.filter((entry) => ids.has(entry.customerId))
+  }, [entries, staffScoped, visibleCustomers])
+  const visibleRoutes = React.useMemo(
+    () => (staffScoped ? routes.filter((route) => allowedRouteIds.includes(route.id)) : routes),
+    [routes, staffScoped, allowedRouteIds],
+  )
 
   React.useEffect(() => {
     if (!cloudActive || !db) return
@@ -154,12 +251,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const unsubLocations = onSnapshot(doc(db, 'meta', 'locations'), (snapshot) =>
       setLocations(snapshot.exists() ? (snapshot.data() as LocationDirectory) : emptyLocations),
     )
+    const unsubRoutes = onSnapshot(collection(db, 'routes'), (snapshot) =>
+      setRoutes(snapshot.docs.map((item) => item.data() as Route)),
+    )
+    const unsubAccounts = onSnapshot(collection(db, 'paymentAccounts'), (snapshot) =>
+      setPaymentAccounts(snapshot.docs.map((item) => item.data() as PaymentAccount)),
+    )
+    const unsubPreferences = onSnapshot(doc(db, 'meta', 'preferences'), (snapshot) => {
+      if (!snapshot.exists()) return
+      const next = { ...defaultPreferences, ...(snapshot.data() as Partial<AppPreferences>) }
+      setPreferencesState(next)
+      saveStored('promarwadi-preferences', next)
+    })
     return () => {
       unsubCustomers()
       unsubEntries()
       unsubLocations()
+      unsubRoutes()
+      unsubAccounts()
+      unsubPreferences()
     }
   }, [cloudActive])
+
+  // users collection is admin-readable only — staff subscribing would get
+  // permission-denied on the whole query, so gate on the live role
+  React.useEffect(() => {
+    if (!cloudActive || !db || role !== 'admin') {
+      setStaffAccounts([])
+      return
+    }
+    return onSnapshot(collection(db, 'users'), (snapshot) =>
+      setStaffAccounts(
+        snapshot.docs.map((item) => ({ uid: item.id, ...(item.data() as UserProfile) })),
+      ),
+    )
+  }, [cloudActive, role])
 
   const setLanguage = React.useCallback((next: Language) => {
     setLanguageState(next)
@@ -182,17 +308,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveStored('promarwadi-entries', next)
   }, [])
 
+  const persistRoutes = React.useCallback((next: Route[]) => {
+    setRoutes(next)
+    saveStored('promarwadi-routes', next)
+  }, [])
+
+  const persistAccounts = React.useCallback((next: PaymentAccount[]) => {
+    setPaymentAccounts(next)
+    saveStored('promarwadi-payment-accounts', next)
+  }, [])
+
   const recordLocation = React.useCallback(
     (district: string, city: string) => {
       if (!district.trim()) return
       if (cloudActive && db) {
-        void setDoc(
-          doc(db, 'meta', 'locations'),
-          {
-            districts: arrayUnion(district.trim()),
-            ...(city.trim() ? { cities: { [district.trim()]: arrayUnion(city.trim()) } } : {}),
-          },
-          { merge: true },
+        cloudWrite(
+          setDoc(
+            doc(db, 'meta', 'locations'),
+            {
+              districts: arrayUnion(district.trim()),
+              ...(city.trim() ? { cities: { [district.trim()]: arrayUnion(city.trim()) } } : {}),
+            },
+            { merge: true },
+          ),
         )
         return
       }
@@ -207,7 +345,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return next
       })
     },
-    [cloudActive],
+    [cloudActive, cloudWrite],
   )
 
   const store: AppStore = {
@@ -219,13 +357,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isCloud: cloudActive,
     t: (key) => dictionary[language][key],
     fmt: (amount) => currency.format(amount),
-    customers,
-    entries,
+    customers: visibleCustomers,
+    entries: visibleEntries,
     range,
     setRange,
     addCustomer: (input) => {
-      const customer: Customer = { id: makeId('customer'), ...input, createdAt: today }
-      if (cloudActive && db) void setDoc(doc(db, 'customers', customer.id), stripUndefined(customer))
+      const customer: Customer = {
+        id: makeId('customer'),
+        ...input,
+        routeId: input.routeId.trim() || undefined,
+        createdAt: today,
+      }
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'customers', customer.id), stripUndefined(customer)))
       else persistCustomers([...customers, customer])
       recordLocation(input.district, input.city)
       return customer
@@ -233,8 +376,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateCustomer: (id, input) => {
       const existing = customers.find((customer) => customer.id === id)
       if (!existing) return
-      const next = { ...existing, ...input, updatedAt: today }
-      if (cloudActive && db) void setDoc(doc(db, 'customers', id), stripUndefined(next))
+      const next = { ...existing, ...input, routeId: input.routeId.trim() || undefined, updatedAt: today }
+      // full replace so a cleared route actually goes away in cloud mode
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'customers', id), stripUndefined(next)))
       else persistCustomers(customers.map((customer) => (customer.id === id ? next : customer)))
       recordLocation(input.district, input.city)
     },
@@ -245,7 +389,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         entries
           .filter((entry) => entry.customerId === id)
           .forEach((entry) => batch.delete(doc(db!, 'ledgerEntries', entry.id)))
-        void batch.commit()
+        cloudWrite(batch.commit())
       } else {
         persistCustomers(customers.filter((customer) => customer.id !== id))
         persistEntries(entries.filter((entry) => entry.customerId !== id))
@@ -260,7 +404,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isEdited: false,
         editCount: 0,
       }
-      if (cloudActive && db) void setDoc(doc(db, 'ledgerEntries', entry.id), stripUndefined(entry))
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'ledgerEntries', entry.id), stripUndefined(entry)))
       else persistEntries([...entries, entry])
     },
     updateEntry: (id, input) => {
@@ -275,19 +419,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         editCount: existing.editCount + 1,
       }
       // full replace (not merge) so cleared payment-mode fields actually go away
-      if (cloudActive && db) void setDoc(doc(db, 'ledgerEntries', id), stripUndefined(next))
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'ledgerEntries', id), stripUndefined(next)))
       else persistEntries(entries.map((entry) => (entry.id === id ? next : entry)))
     },
     deleteEntry: (id) => {
-      if (cloudActive && db) void deleteDoc(doc(db, 'ledgerEntries', id))
+      if (cloudActive && db) cloudWrite(deleteDoc(doc(db, 'ledgerEntries', id)))
       else persistEntries(entries.filter((entry) => entry.id !== id))
     },
     importLocalToCloud: async () => {
       if (!cloudActive || !db) return 0
       const localCustomers = loadStored<Customer[]>('promarwadi-customers', [])
       const localEntries = loadStored<LedgerEntry[]>('promarwadi-entries', [])
+      const localRoutes = loadStored<Route[]>('promarwadi-routes', [])
+      const localAccounts = loadStored<PaymentAccount[]>('promarwadi-payment-accounts', [])
       const existingCustomerIds = new Set(customers.map((customer) => customer.id))
       const existingEntryIds = new Set(entries.map((entry) => entry.id))
+      const existingRouteIds = new Set(routes.map((route) => route.id))
+      const existingAccountIds = new Set(paymentAccounts.map((account) => account.id))
       const batch = writeBatch(db)
       let count = 0
       for (const customer of localCustomers) {
@@ -298,6 +446,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       for (const entry of localEntries) {
         if (existingEntryIds.has(entry.id)) continue
         batch.set(doc(db, 'ledgerEntries', entry.id), stripUndefined(entry))
+        count += 1
+      }
+      for (const route of localRoutes) {
+        if (existingRouteIds.has(route.id)) continue
+        batch.set(doc(db, 'routes', route.id), stripUndefined(route))
+        count += 1
+      }
+      for (const account of localAccounts) {
+        if (existingAccountIds.has(account.id)) continue
+        // cloud may already have a default — never import a second one
+        batch.set(
+          doc(db, 'paymentAccounts', account.id),
+          stripUndefined({ ...account, isDefault: paymentAccounts.length === 0 && account.isDefault }),
+        )
         count += 1
       }
       const localLocations = loadStored<LocationDirectory>('promarwadi-locations', emptyLocations)
@@ -319,6 +481,170 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     knownDistricts: [...locations.districts].sort((a, b) => a.localeCompare(b)),
     citiesFor: (district) => [...(locations.cities[district] ?? [])].sort((a, b) => a.localeCompare(b)),
+    routes: [...visibleRoutes].sort((a, b) => a.name.localeCompare(b.name)),
+    addRoute: (name) => {
+      const route: Route = { id: makeId('route'), name: name.trim(), createdAt: today }
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'routes', route.id), stripUndefined(route)))
+      else persistRoutes([...routes, route])
+      return route
+    },
+    updateRoute: (id, name) => {
+      const existing = routes.find((route) => route.id === id)
+      if (!existing || !name.trim()) return
+      const next: Route = { ...existing, name: name.trim(), updatedAt: today }
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'routes', id), stripUndefined(next)))
+      else persistRoutes(routes.map((route) => (route.id === id ? next : route)))
+    },
+    deleteRoute: (id) => {
+      // detach the route from its customers so no dangling routeId remains
+      const assigned = customers.filter((customer) => customer.routeId === id)
+      if (cloudActive && db) {
+        const batch = writeBatch(db)
+        batch.delete(doc(db, 'routes', id))
+        assigned.forEach((customer) =>
+          batch.set(doc(db!, 'customers', customer.id), stripUndefined({ ...customer, routeId: undefined })),
+        )
+        cloudWrite(batch.commit())
+      } else {
+        persistRoutes(routes.filter((route) => route.id !== id))
+        persistCustomers(
+          customers.map((customer) =>
+            customer.routeId === id ? { ...customer, routeId: undefined } : customer,
+          ),
+        )
+      }
+    },
+    routeName: (routeId) => routes.find((route) => route.id === routeId)?.name ?? '',
+    assignCustomersToRoute: (customerIds, routeId) => {
+      // bulk move existing customers onto a route (or off any route when
+      // routeId is '') — e.g. onboarding a newly created route
+      const ids = new Set(customerIds)
+      const nextRouteId = routeId || undefined
+      if (cloudActive && db) {
+        const batch = writeBatch(db)
+        customers
+          .filter((customer) => ids.has(customer.id))
+          .forEach((customer) =>
+            batch.set(
+              doc(db!, 'customers', customer.id),
+              stripUndefined({ ...customer, routeId: nextRouteId, updatedAt: today }),
+            ),
+          )
+        cloudWrite(batch.commit())
+      } else {
+        persistCustomers(
+          customers.map((customer) =>
+            ids.has(customer.id) ? { ...customer, routeId: nextRouteId, updatedAt: today } : customer,
+          ),
+        )
+      }
+    },
+    paymentAccounts: [...paymentAccounts].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    defaultPaymentAccount: paymentAccounts.find((account) => account.isDefault) ?? null,
+    addPaymentAccount: (input) => {
+      const account: PaymentAccount = {
+        id: makeId('account'),
+        type: input.type,
+        name: input.name.trim(),
+        detail: input.detail.trim() || undefined,
+        // the first account added becomes the default automatically
+        isDefault: paymentAccounts.length === 0,
+        createdAt: new Date().toISOString(),
+      }
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'paymentAccounts', account.id), stripUndefined(account)))
+      else persistAccounts([...paymentAccounts, account])
+    },
+    updatePaymentAccount: (id, input) => {
+      const existing = paymentAccounts.find((account) => account.id === id)
+      if (!existing) return
+      const next: PaymentAccount = {
+        ...existing,
+        type: input.type,
+        name: input.name.trim(),
+        detail: input.detail.trim() || undefined,
+        updatedAt: new Date().toISOString(),
+      }
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'paymentAccounts', id), stripUndefined(next)))
+      else persistAccounts(paymentAccounts.map((account) => (account.id === id ? next : account)))
+    },
+    deletePaymentAccount: (id) => {
+      const remaining = paymentAccounts.filter((account) => account.id !== id)
+      const wasDefault = paymentAccounts.find((account) => account.id === id)?.isDefault
+      // never leave accounts around without a default — promote the oldest one
+      const promoted = wasDefault && remaining.length > 0 ? remaining[0] : null
+      if (cloudActive && db) {
+        const batch = writeBatch(db)
+        batch.delete(doc(db, 'paymentAccounts', id))
+        if (promoted) batch.set(doc(db!, 'paymentAccounts', promoted.id), { ...promoted, isDefault: true })
+        cloudWrite(batch.commit())
+      } else {
+        persistAccounts(
+          remaining.map((account) =>
+            promoted && account.id === promoted.id ? { ...account, isDefault: true } : account,
+          ),
+        )
+      }
+    },
+    setDefaultPaymentAccount: (id) => {
+      if (cloudActive && db) {
+        const batch = writeBatch(db)
+        paymentAccounts.forEach((account) => {
+          if (account.isDefault !== (account.id === id)) {
+            batch.set(doc(db!, 'paymentAccounts', account.id), stripUndefined({ ...account, isDefault: account.id === id }))
+          }
+        })
+        cloudWrite(batch.commit())
+      } else {
+        persistAccounts(paymentAccounts.map((account) => ({ ...account, isDefault: account.id === id })))
+      }
+    },
+    staffAccounts: [...staffAccounts]
+      .filter((account) => account.role === 'staff')
+      .sort((a, b) => (a.name ?? a.email ?? '').localeCompare(b.name ?? b.email ?? '')),
+    addStaff: async (email, password, input) => {
+      if (!cloudActive || !db) throw new Error('cloud-only')
+      // both steps awaited (not cloudWrite) so the sheet can show a precise error
+      const uid = await createAuthAccount(email, password)
+      const profile: UserProfile = {
+        role: 'staff',
+        name: input.name.trim(),
+        email: email.trim(),
+        phone: input.phone.trim() || undefined,
+        staffType: input.staffType,
+        allowedRouteIds: input.allowedRouteIds,
+      }
+      await setDoc(doc(db, 'users', uid), stripUndefined(profile))
+    },
+    updateStaff: (uid, input) => {
+      const existing = staffAccounts.find((account) => account.uid === uid)
+      if (!existing || !cloudActive || !db) return
+      const next: UserProfile = {
+        role: existing.role,
+        name: input.name.trim(),
+        email: existing.email,
+        phone: input.phone.trim() || undefined,
+        staffType: input.staffType,
+        allowedRouteIds: input.allowedRouteIds,
+      }
+      // full replace so a cleared phone actually goes away
+      cloudWrite(setDoc(doc(db, 'users', uid), stripUndefined(next)))
+    },
+    deleteStaff: (uid) => {
+      // removes the profile doc — access revoked instantly (auth.tsx watches it
+      // live); the Firebase Auth login remains but lands on the no-access screen
+      if (!cloudActive || !db) return
+      cloudWrite(deleteDoc(doc(db, 'users', uid)))
+    },
+    allowedRouteIds,
+    preferences,
+    setPreferences: (next) => {
+      const merged = { ...preferences, ...next }
+      setPreferencesState(merged)
+      saveStored('promarwadi-preferences', merged)
+      if (cloudActive && db) cloudWrite(setDoc(doc(db, 'meta', 'preferences'), merged, { merge: true }))
+    },
+    syncError,
+    clearSyncError: () => setSyncError(''),
   }
 
   return <AppContext.Provider value={store}>{children}</AppContext.Provider>

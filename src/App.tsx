@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Copy, FileText, Home, LogOut, Printer, Settings, Users } from 'lucide-react'
+import { AlertTriangle, Copy, FileText, Home, LogOut, Printer, Settings, Users, X } from 'lucide-react'
 import { CustomerSheet } from './components/app/customer-sheet'
 import { EntrySheet, type EntryDraft } from './components/app/entry-sheet'
 import { useAuth } from './lib/auth'
@@ -61,6 +61,34 @@ function NoAccessScreen() {
   )
 }
 
+/* Cloud writes are fire-and-forget; when one fails (bad security rules,
+   offline, …) this toast is the only signal the user gets. */
+function SyncErrorToast() {
+  const { t, syncError, clearSyncError } = useApp()
+  if (!syncError) return null
+  return (
+    <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[70] flex justify-center px-4 print:hidden lg:bottom-6">
+      <div className="flex max-w-md items-start gap-2.5 rounded-xl border border-debit-strong/40 bg-debit-tint p-3.5 text-sm text-debit shadow-[0_12px_32px_rgba(44,44,42,0.18)] animate-fade-up">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0">
+          <p className="font-medium">
+            {t('syncFailed')} <span className="font-normal">({syncError})</span>
+          </p>
+          <p className="mt-0.5 text-xs opacity-80">{t('syncFailedHint')}</p>
+        </div>
+        <button
+          type="button"
+          aria-label={t('cancel')}
+          onClick={clearSyncError}
+          className="pressable -m-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg hover:bg-debit/10"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const { t, customers, isAdmin } = useApp()
   const authState = useAuth()
@@ -75,10 +103,10 @@ function App() {
 
   const openCustomer = customers.find((customer) => customer.id === openCustomerId)
 
-  // staff see only the collection sheet (plus settings for language/sign-out)
+  // staff see their route-scoped customers, the collection sheet, and settings
   const allowedTabs: Tab[] = isAdmin
     ? ['home', 'customers', 'collection', 'reports', 'settings']
-    : ['collection', 'settings']
+    : ['customers', 'collection', 'settings']
   const activeTab: Tab = allowedTabs.includes(tab) ? tab : isAdmin ? 'home' : 'collection'
 
   function navigate(next: Tab) {
@@ -209,6 +237,7 @@ function App() {
         </div>
       </nav>
 
+      <SyncErrorToast />
       <EntrySheet draft={entryDraft} onClose={() => setEntryDraft(null)} />
       <CustomerSheet
         open={customerSheet.open}

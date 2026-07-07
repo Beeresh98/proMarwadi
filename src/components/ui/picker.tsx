@@ -227,6 +227,121 @@ export function Picker({
   )
 }
 
+/* Multi-select variant of Picker: checkbox rows that stay open while
+   toggling, a select-all header, and a trigger that summarizes the choice. */
+export function MultiPicker({
+  values,
+  options,
+  onChange,
+  placeholder = '—',
+  allLabel,
+  countLabel,
+  className,
+  align = 'left',
+}: {
+  values: string[]
+  options: PickerOption[]
+  onChange: (values: string[]) => void
+  placeholder?: string
+  /* header row label toggling select-all / clear */
+  allLabel: string
+  /* trigger summary when 2+ picked, e.g. (n) => `${n} selected` */
+  countLabel: (count: number) => string
+  className?: string
+  align?: 'left' | 'right'
+}) {
+  const [open, setOpen] = React.useState(false)
+  const close = React.useCallback(() => setOpen(false), [])
+  const ref = useDismissable(open, close)
+  const anchorRef = React.useRef<HTMLButtonElement>(null)
+
+  const allSelected = values.length === options.length
+  const summary =
+    values.length === 0
+      ? placeholder
+      : values.length === 1
+        ? (options.find((option) => option.value === values[0])?.label ?? placeholder)
+        : allSelected
+          ? allLabel
+          : countLabel(values.length)
+
+  function toggle(value: string) {
+    onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value])
+  }
+
+  return (
+    <div ref={ref} className={cn('relative', className)}>
+      <button
+        ref={anchorRef}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          'pressable flex h-12 w-full items-center justify-between gap-2 rounded-[var(--radius-control)] border border-input bg-card px-3.5 text-left text-[15px] hover:border-border-strong focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/40',
+          open && 'border-primary ring-2 ring-ring/40',
+        )}
+      >
+        <span className={cn('truncate', values.length === 0 && 'text-muted-foreground')}>{summary}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {values.length > 0 && (
+            <span className="tnum rounded bg-primary-tint px-1.5 py-px text-[11px] font-medium text-primary-pressed">
+              {values.length}
+            </span>
+          )}
+          <ChevronDown
+            className={cn('h-4 w-4 text-muted-foreground transition-transform duration-200', open && 'rotate-180')}
+          />
+        </span>
+      </button>
+
+      <Popover open={open} anchorRef={anchorRef} align={align} className="max-h-72 overflow-auto p-1.5">
+        <div role="listbox" aria-multiselectable="true">
+          <button
+            type="button"
+            onClick={() => onChange(allSelected ? [] : options.map((option) => option.value))}
+            className="pressable mb-1 flex w-full items-center justify-between gap-2 rounded-lg border-b border-border px-3 py-2 text-left text-[13px] font-medium text-primary hover:bg-primary-tint"
+          >
+            {allLabel}
+            {allSelected && <Check className="h-4 w-4 shrink-0" />}
+          </button>
+          {options.map((option) => {
+            const selected = values.includes(option.value)
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => toggle(option.value)}
+                className={cn(
+                  'pressable flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-[15px] hover:bg-fill',
+                  selected && 'bg-primary-tint text-primary-pressed',
+                )}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate">{option.label}</span>
+                  {option.hint && (
+                    <span className="block truncate text-xs text-muted-foreground">{option.hint}</span>
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    'flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded border',
+                    selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong',
+                  )}
+                >
+                  {selected && <Check className="h-3 w-3" />}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </Popover>
+    </div>
+  )
+}
+
 export function SegmentedControl<T extends string>({
   value,
   options,

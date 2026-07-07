@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ChevronRight, Plus, Search, UserPlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Search, UserPlus } from 'lucide-react'
 import { Avatar, Balance } from '../components/app/money'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/form'
@@ -11,6 +11,7 @@ import { cn } from '../lib/utils'
 type SortMode = 'nameAsc' | 'nameDesc' | 'balanceHigh' | 'balanceLow'
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+const PAGE_SIZE = 10
 
 export function CustomersScreen({
   districtFilter,
@@ -23,10 +24,16 @@ export function CustomersScreen({
   onOpenCustomer: (customerId: string) => void
   onAddCustomer: () => void
 }) {
-  const { t, customers, entries } = useApp()
+  const { t, customers, entries, isAdmin } = useApp()
   const [search, setSearch] = React.useState('')
   const [letter, setLetter] = React.useState('')
   const [sort, setSort] = React.useState<SortMode>('nameAsc')
+  const [page, setPage] = React.useState(0)
+
+  // any filter change jumps back to the first page
+  React.useEffect(() => {
+    setPage(0)
+  }, [search, letter, sort, districtFilter])
 
   const districts = Array.from(new Set(customers.map((customer) => customer.district)))
     .filter(Boolean)
@@ -55,6 +62,10 @@ export function CustomersScreen({
       const balanceB = customerBalance(b, entries)
       return sort === 'balanceHigh' ? balanceB - balanceA : balanceA - balanceB
     })
+
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount - 1)
+  const paged = visible.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
 
   return (
     <div className="space-y-5 animate-fade-up">
@@ -132,41 +143,72 @@ export function CustomersScreen({
         <div className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-dashed border-border-strong py-12 text-center animate-fade-up">
           <UserPlus className="h-8 w-8 text-border-strong" />
           <p className="max-w-56 text-sm text-muted-foreground">{t('noCustomers')}</p>
-          <Button size="sm" variant="secondary" onClick={onAddCustomer}>
+          {isAdmin && (
+            <Button size="sm" variant="secondary" onClick={onAddCustomer}>
+              <Plus className="h-4 w-4" />
+              {t('addCustomer')}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          <div key={currentPage} className="stagger rounded-[var(--radius-card)] border border-border bg-card px-4">
+            {paged.map((customer) => (
+              <button
+                key={customer.id}
+                type="button"
+                onClick={() => onOpenCustomer(customer.id)}
+                className="pressable group flex w-full items-center gap-3.5 border-b border-border py-3.5 text-left last:border-b-0"
+              >
+                <Avatar name={customer.name} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-medium">{customer.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {customer.city} · {customer.district}
+                    {customer.phone && ` · ${customer.phone}`}
+                  </p>
+                </div>
+                <Balance amount={customerBalance(customer, entries)} amountClassName="text-[15px]" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-border-strong transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+          {pageCount > 1 && (
+            <div className="flex items-center justify-center gap-3 animate-fade-in">
+              <Button
+                size="iconSm"
+                variant="ghost"
+                aria-label={t('back')}
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <p className="tnum text-xs text-secondary-text">
+                {currentPage * PAGE_SIZE + 1}–{Math.min(visible.length, (currentPage + 1) * PAGE_SIZE)} / {visible.length}
+              </p>
+              <Button
+                size="iconSm"
+                variant="ghost"
+                aria-label={t('all')}
+                disabled={currentPage >= pageCount - 1}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+
+      {isAdmin && (
+        <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 -mx-4 flex justify-end bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-2 pt-3 lg:bottom-6">
+          <Button onClick={onAddCustomer} className="font-semibold shadow-[0_8px_20px_rgba(15,110,86,0.3)]">
             <Plus className="h-4 w-4" />
             {t('addCustomer')}
           </Button>
         </div>
-      ) : (
-        <div className="stagger rounded-[var(--radius-card)] border border-border bg-card px-4">
-          {visible.map((customer) => (
-            <button
-              key={customer.id}
-              type="button"
-              onClick={() => onOpenCustomer(customer.id)}
-              className="pressable group flex w-full items-center gap-3.5 border-b border-border py-3.5 text-left last:border-b-0"
-            >
-              <Avatar name={customer.name} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-medium">{customer.name}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {customer.city} · {customer.district}
-                  {customer.phone && ` · ${customer.phone}`}
-                </p>
-              </div>
-              <Balance amount={customerBalance(customer, entries)} amountClassName="text-[15px]" />
-              <ChevronRight className="h-4 w-4 shrink-0 text-border-strong transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
-            </button>
-          ))}
-        </div>
       )}
-
-      <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 -mx-4 flex justify-end bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-2 pt-3 lg:bottom-6">
-        <Button onClick={onAddCustomer} className="font-semibold shadow-[0_8px_20px_rgba(15,110,86,0.3)]">
-          <Plus className="h-4 w-4" />
-          {t('addCustomer')}
-        </Button>
-      </div>
     </div>
   )
 }

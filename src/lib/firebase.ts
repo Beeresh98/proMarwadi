@@ -1,6 +1,12 @@
-import { initializeApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { deleteApp, initializeApp } from 'firebase/app'
+import {
+  connectAuthEmulator,
+  createUserWithEmailAndPassword,
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth'
+import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore'
 
 /* Web app config identifies the project; it ships in the bundle and is not a
    secret — data protection comes from Firestore security rules. Env vars can
@@ -24,6 +30,11 @@ export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseCon
    (.../databases/default/...; the true reserved default shows as -default-). */
 const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || 'default'
 
+/* Local Firebase emulator mode (never touches production data). Run the app
+   with `npm run dev:emu` — it loads .env.emulator, which flips this on and
+   swaps the project id to demo-promarwadi so nothing can reach the cloud. */
+export const useEmulators = import.meta.env.VITE_USE_EMULATORS === 'true'
+
 export const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null
 export const auth = firebaseApp ? getAuth(firebaseApp) : null
 export const db = firebaseApp
@@ -31,3 +42,37 @@ export const db = firebaseApp
     ? getFirestore(firebaseApp, firestoreDatabaseId)
     : getFirestore(firebaseApp)
   : null
+
+if (useEmulators && auth && db) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
+  connectFirestoreEmulator(db, '127.0.0.1', 8080)
+}
+
+/* Creates a Firebase Auth account for a staff member WITHOUT touching the
+   admin's session: createUserWithEmailAndPassword signs the new user in on
+   whatever auth instance it runs on, so we run it on a throwaway secondary
+   app and tear it down immediately. Returns the new uid. */
+export async function createAuthAccount(email: string, password: string): Promise<string> {
+  if (!isFirebaseConfigured) throw new Error('cloud-only')
+  const secondary = initializeApp(firebaseConfig, `account-factory-${Date.now()}`)
+  try {
+    const secondaryAuth = getAuth(secondary)
+    if (useEmulators) connectAuthEmulator(secondaryAuth, 'http://127.0.0.1:9099', { disableWarnings: true })
+    try {
+      const credential = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password)
+      return credential.user.uid
+    } catch (error) {
+      // a previous attempt may have created the login but failed before the
+      // profile was written — if the credentials match, adopt that account
+      if ((error as { code?: string })?.code !== 'auth/email-already-in-use') throw error
+      const credential = await signInWithEmailAndPassword(secondaryAuth, email.trim(), password).catch(() => {
+        throw error
+      })
+      return credential.user.uid
+    } finally {
+      await signOut(secondaryAuth).catch(() => {})
+    }
+  } finally {
+    void deleteApp(secondary).catch(() => {})
+  }
+}

@@ -16,6 +16,7 @@ const emptyForm = {
   district: '',
   city: '',
   address: '',
+  routeId: '',
   openingBalance: '0',
 }
 
@@ -104,11 +105,13 @@ export function CustomerSheet({
   editing: Customer | null
   onClose: () => void
 }) {
-  const { t, customers, addCustomer, updateCustomer, knownDistricts, citiesFor } = useApp()
+  const { t, customers, addCustomer, updateCustomer, knownDistricts, citiesFor, routes, addRoute } = useApp()
   const [form, setForm] = React.useState(emptyForm)
   const [duplicate, setDuplicate] = React.useState<Customer | null>(null)
   const [newCityMode, setNewCityMode] = React.useState(false)
   const [newDistrictMode, setNewDistrictMode] = React.useState(false)
+  const [newRouteMode, setNewRouteMode] = React.useState(false)
+  const [newRouteName, setNewRouteName] = React.useState('')
 
   // merge the persisted directory with whatever's on current customers, so a
   // district/city never disappears just because its last customer was deleted
@@ -131,6 +134,8 @@ export function CustomerSheet({
       ? customers.filter((customer) => customer.district === editing.district).map((customer) => customer.city)
       : []
     setNewCityMode(editing ? !editingCities.includes(editing.city) : false)
+    setNewRouteMode(false)
+    setNewRouteName('')
     setForm(
       editing
         ? {
@@ -139,6 +144,7 @@ export function CustomerSheet({
             district: editing.district,
             city: editing.city,
             address: editing.address ?? '',
+            routeId: editing.routeId ?? '',
             openingBalance: String(editing.openingBalance),
           }
         : emptyForm,
@@ -159,12 +165,19 @@ export function CustomerSheet({
       setDuplicate(match)
       return
     }
+    // typing a brand-new route creates it on the spot, then assigns it
+    const routeId = newRouteMode
+      ? newRouteName.trim()
+        ? addRoute(newRouteName).id
+        : ''
+      : form.routeId
     const input = {
       name: form.name.trim(),
       phone: form.phone.trim(),
       district: form.district.trim(),
       city: form.city.trim(),
       address: form.address.trim(),
+      routeId,
       openingBalance: Number(form.openingBalance) || 0,
     }
     if (editing) updateCustomer(editing.id, input)
@@ -227,6 +240,51 @@ export function CustomerSheet({
             onChange={(city) => setForm((current) => ({ ...current, city }))}
           />
         </div>
+        <Field label={t('route')}>
+          {newRouteMode ? (
+            <div className="relative animate-fade-up">
+              <Input
+                autoFocus
+                value={newRouteName}
+                onChange={(event) => setNewRouteName(event.target.value)}
+                placeholder={t('typeRouteName')}
+                className={routes.length > 0 ? 'pr-11' : undefined}
+              />
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  aria-label={t('backToList')}
+                  title={t('backToList')}
+                  onClick={() => {
+                    setNewRouteMode(false)
+                    setNewRouteName('')
+                  }}
+                  className="pressable absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <ListFilter className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <Picker
+              value={form.routeId}
+              placeholder={t('noRoute')}
+              onChange={(next) => {
+                if (next === ADD_NEW) {
+                  setNewRouteMode(true)
+                  setForm((current) => ({ ...current, routeId: '' }))
+                } else {
+                  setForm((current) => ({ ...current, routeId: next }))
+                }
+              }}
+              options={[
+                { value: '', label: t('noRoute') },
+                ...routes.map((route) => ({ value: route.id, label: route.name })),
+                { value: ADD_NEW, label: `+ ${t('addNewRoute')}`, action: true },
+              ]}
+            />
+          )}
+        </Field>
         <Field label={t('address')}>
           <Input value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
         </Field>

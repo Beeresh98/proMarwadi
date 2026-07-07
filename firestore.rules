@@ -27,8 +27,9 @@ service cloud.firestore {
     match /users/{userId} {
       // users may read their own profile; admin may read all
       allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
-      // accounts are activated from the Firebase console only
-      allow create, update, delete: if false;
+      // admin manages staff accounts from the app, but can never touch their
+      // own profile doc — no accidental self-demotion or lockout
+      allow create, update, delete: if isAdmin() && request.auth.uid != userId;
     }
 
     match /customers/{customerId} {
@@ -39,11 +40,31 @@ service cloud.firestore {
 
     match /ledgerEntries/{entryId} {
       allow read: if isStaff();
+      // staff record received payments (credits) only; admin does everything
+      allow create: if isAdmin() || (isStaff() && request.resource.data.type == 'credit');
+      allow update, delete: if isAdmin();
+    }
+
+    // collection routes customers are assigned to
+    match /routes/{routeId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // banks / UPI handles payments land in; staff read them to pick a mode
+    match /paymentAccounts/{accountId} {
+      allow read: if isStaff();
       allow create, update, delete: if isAdmin();
     }
 
     // known district/city names, persisted independently of customer records
     match /meta/locations {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // app-wide preferences: date format, landing page
+    match /meta/preferences {
       allow read: if isStaff();
       allow write: if isAdmin();
     }
