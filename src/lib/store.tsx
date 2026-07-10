@@ -4,11 +4,13 @@ import { useAuth } from './auth'
 import { createAuthAccount, db, isFirebaseConfigured } from './firebase'
 import { dictionary, type TranslationKey } from './i18n'
 import { seedCustomers, seedEntries, today } from './ledger'
+import type { ParsedImportRow } from './csv-import'
 import type {
   AppPreferences,
   Customer,
   DateRange,
   EntryType,
+  ImportBatch,
   Language,
   LedgerEntry,
   LocationDirectory,
@@ -131,6 +133,15 @@ type AppStore = {
   updateEntry: (id: string, input: EntryInput) => void
   deleteEntry: (id: string) => void
   importLocalToCloud: () => Promise<number>
+  /* CSV bulk entry — admin-only, gated by preferences.csvImportEnabled in the UI. */
+  importBatches: ImportBatch[]
+  importEntries: (input: {
+    customerId: string
+    fileName: string
+    fileHash: string
+    rows: ParsedImportRow[]
+  }) => void
+  reverseImportBatch: (batchId: string) => void
   /* Every district/city ever entered — survives deleting the customers that used it. */
   knownDistricts: string[]
   citiesFor: (district: string) => string[]
@@ -192,6 +203,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   )
   const [paymentAccounts, setPaymentAccounts] = React.useState<PaymentAccount[]>(() =>
     isFirebaseConfigured ? [] : loadStored<PaymentAccount[]>('promarwadi-payment-accounts', []),
+  )
+  const [importBatches, setImportBatches] = React.useState<ImportBatch[]>(() =>
+    isFirebaseConfigured ? [] : loadStored<ImportBatch[]>('promarwadi-import-batches', []),
   )
   // Preferences load from localStorage in both modes so the UI doesn't flash
   // defaults while the cloud snapshot arrives; cloud stays the source of truth.
@@ -287,6 +301,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     )
   }, [cloudActive, role])
 
+  // importBatches is admin-only in Firestore rules — same gating as staffAccounts
+  React.useEffect(() => {
+    if (!cloudActive || !db || role !== 'admin') {
+      setImportBatches([])
+      return
+    }
+    return onSnapshot(collection(db, 'importBatches'), (snapshot) =>
+      setImportBatches(snapshot.docs.map((item) => item.data() as ImportBatch)),
+    )
+  }, [cloudActive, role])
+
   const setLanguage = React.useCallback((next: Language) => {
     setLanguageState(next)
     saveStored('promarwadi-language', next)
@@ -316,6 +341,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const persistAccounts = React.useCallback((next: PaymentAccount[]) => {
     setPaymentAccounts(next)
     saveStored('promarwadi-payment-accounts', next)
+  }, [])
+
+  const persistImportBatches = React.useCallback((next: ImportBatch[]) => {
+    setImportBatches(next)
+    saveStored('promarwadi-import-batches', next)
   }, [])
 
   const recordLocation = React.useCallback(
@@ -425,6 +455,87 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteEntry: (id) => {
       if (cloudActive && db) cloudWrite(deleteDoc(doc(db, 'ledgerEntries', id)))
       else persistEntries(entries.filter((entry) => entry.id !== id))
+    },
+    importEntries: ({ customerId, fileName, fileHash, rows }) => {
+      const batchId = makeId('import')
+      const nowIso = new Date().toISOString()
+      const newEntries: LedgerEntry[] = []
+      rows.forEach((row) => {
+        if (row.bill) {
+          newEntries.push({
+            id: makeId('entry'),
+            customerId,
+            date: row.date,
+            type: 'debit',
+            amount: row.bill,
+            note: row.note,
+            importBatchId: batchId,
+            createdAt: nowIso,
+            createdBy: actorName,
+            isEdited: false,
+            editCount: 0,
+          })
+        }
+        if (row.cash) {
+          newEntries.push({
+            id: makeId('entry'),
+            customerId,
+            date: row.date,
+            type: 'credit',
+            amount: row.cash,
+            note: row.note,
+            paymentMode: 'cash',
+            importBatchId: batchId,
+            createdAt: nowIso,
+            createdBy: actorName,
+            isEdited: false,
+            editCount: 0,
+          })
+        }
+      })
+      const batch: ImportBatch = {
+        id: batchId,
+        customerId,
+        fileName,
+        rowCount: rows.length,
+        entryCount: newEntries.length,
+        totalBill: rows.reduce((sum, row) => sum + (row.bill ?? 0), 0),
+        totalCash: rows.reduce((sum, row) => sum + (row.cash ?? 0), 0),
+        entryIds: newEntries.map((entry) => entry.id),
+        fileHash,
+        status: 'active',
+        createdAt: nowIso,
+        createdBy: actorName,
+      }
+      if (cloudActive && db) {
+        const batchWrite = writeBatch(db)
+        newEntries.forEach((entry) => batchWrite.set(doc(db!, 'ledgerEntries', entry.id), stripUndefined(entry)))
+        batchWrite.set(doc(db!, 'importBatches', batchId), stripUndefined(batch))
+        cloudWrite(batchWrite.commit())
+      } else {
+        persistEntries([...entries, ...newEntries])
+        persistImportBatches([...importBatches, batch])
+      }
+    },
+    reverseImportBatch: (batchId) => {
+      const batch = importBatches.find((item) => item.id === batchId)
+      if (!batch || batch.status === 'reversed') return
+      const nextBatch: ImportBatch = {
+        ...batch,
+        status: 'reversed',
+        reversedAt: new Date().toISOString(),
+        reversedBy: actorName,
+      }
+      if (cloudActive && db) {
+        const batchWrite = writeBatch(db)
+        batch.entryIds.forEach((entryId) => batchWrite.delete(doc(db!, 'ledgerEntries', entryId)))
+        batchWrite.set(doc(db!, 'importBatches', batchId), stripUndefined(nextBatch))
+        cloudWrite(batchWrite.commit())
+      } else {
+        const entryIds = new Set(batch.entryIds)
+        persistEntries(entries.filter((entry) => !entryIds.has(entry.id)))
+        persistImportBatches(importBatches.map((item) => (item.id === batchId ? nextBatch : item)))
+      }
     },
     importLocalToCloud: async () => {
       if (!cloudActive || !db) return 0
@@ -539,6 +650,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         )
       }
     },
+    importBatches: [...importBatches].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     paymentAccounts: [...paymentAccounts].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     defaultPaymentAccount: paymentAccounts.find((account) => account.isDefault) ?? null,
     addPaymentAccount: (input) => {

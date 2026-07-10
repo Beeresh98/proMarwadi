@@ -102,6 +102,98 @@ const paymentAccounts = [
   { id: 'account-phonepe', type: 'upi', name: 'PhonePe', detail: '9876543210@ybl', isDefault: false },
 ]
 
+// CSV bulk-entry demo data: one active import (Ramesh Footwear, 3 rows → 4
+// entries, one row carrying both a bill and a cash amount) and one reversed
+// import (Shri Ganesh Vastra) whose entries were deleted on reversal — only
+// the audit-log batch doc survives, as real reversal leaves behind.
+const importBatches = [
+  {
+    id: 'batch-import-01',
+    customerId: 'cust-01',
+    fileName: 'ramesh-footwear-entries.csv',
+    rowCount: 3,
+    entryCount: 4,
+    totalBill: 6500,
+    totalCash: 4000,
+    entryIds: ['import-entry-01', 'import-entry-02', 'import-entry-03', 'import-entry-04'],
+    fileHash: 'seed-demo-hash-01',
+    status: 'active',
+    createdAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+    createdBy: 'Admin',
+  },
+  {
+    id: 'batch-import-02',
+    customerId: 'cust-04',
+    fileName: 'shri-ganesh-vastra-entries.csv',
+    rowCount: 2,
+    entryCount: 2,
+    totalBill: 0,
+    totalCash: 5200,
+    entryIds: ['import-entry-05', 'import-entry-06'],
+    fileHash: 'seed-demo-hash-02',
+    status: 'reversed',
+    createdAt: new Date(Date.now() - 40 * 86400000).toISOString(),
+    createdBy: 'Admin',
+    reversedAt: new Date(Date.now() - 38 * 86400000).toISOString(),
+    reversedBy: 'Admin',
+  },
+]
+
+const importedEntries = [
+  {
+    id: 'import-entry-01',
+    customerId: 'cust-01',
+    date: isoDaysAgo(20),
+    type: 'debit',
+    amount: 2500,
+    note: 'Back-dated stock bill',
+    importBatchId: 'batch-import-01',
+    createdAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+    createdBy: 'Admin',
+    isEdited: false,
+    editCount: 0,
+  },
+  {
+    id: 'import-entry-02',
+    customerId: 'cust-01',
+    date: isoDaysAgo(20),
+    type: 'credit',
+    amount: 1500,
+    note: 'Back-dated collection',
+    paymentMode: 'cash',
+    importBatchId: 'batch-import-01',
+    createdAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+    createdBy: 'Admin',
+    isEdited: false,
+    editCount: 0,
+  },
+  {
+    id: 'import-entry-03',
+    customerId: 'cust-01',
+    date: isoDaysAgo(15),
+    type: 'debit',
+    amount: 4000,
+    importBatchId: 'batch-import-01',
+    createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
+    createdBy: 'Admin',
+    isEdited: false,
+    editCount: 0,
+  },
+  {
+    id: 'import-entry-04',
+    customerId: 'cust-01',
+    date: isoDaysAgo(10),
+    type: 'credit',
+    amount: 2500,
+    paymentMode: 'cash',
+    importBatchId: 'batch-import-01',
+    createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
+    createdBy: 'Admin',
+    isEdited: false,
+    editCount: 0,
+  },
+]
+
 // district → cities → customers, spread across routes
 const customers = [
   { id: 'cust-01', name: 'Ramesh Footwear', phone: '9876543210', district: 'Jodhpur', city: 'Bilara', address: 'Main Bazaar', routeId: 'route-bilara', openingBalance: 12000 },
@@ -205,6 +297,14 @@ async function main() {
     await setDocument(`ledgerEntries/${entry.id}`, entry)
   }
   console.log(`  ledgerEntries: ${entries.length}`)
+
+  for (const entry of importedEntries) {
+    await setDocument(`ledgerEntries/${entry.id}`, entry)
+  }
+  for (const batch of importBatches) {
+    await setDocument(`importBatches/${batch.id}`, batch)
+  }
+  console.log(`  CSV import demo: 1 active batch (Ramesh Footwear, 4 entries), 1 reversed batch (Shri Ganesh Vastra)`)
 
   const districts = [...new Set(customers.map((customer) => customer.district))]
   const cities = {}

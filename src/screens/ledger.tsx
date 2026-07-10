@@ -3,17 +3,21 @@ import {
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
+  Download,
   FileText,
   Pencil,
   Phone,
   Trash2,
+  Upload,
 } from 'lucide-react'
 import type { EntryDraft } from '../components/app/entry-sheet'
+import { ImportSheet } from '../components/app/import-sheet'
 import { Button } from '../components/ui/button'
 import { DatePicker, formatDisplayDate } from '../components/ui/date-picker'
 import { SegmentedControl } from '../components/ui/picker'
 import { ConfirmDialog } from '../components/ui/sheet'
-import { customerBalance, ledgerRows } from '../lib/ledger'
+import { csvImportTemplate } from '../lib/csv-import'
+import { customerBalance, downloadFile, ledgerRows } from '../lib/ledger'
 import { exportCustomerLedgerPdf } from '../lib/pdf'
 import { useApp } from '../lib/store'
 import { cn } from '../lib/utils'
@@ -33,6 +37,7 @@ export function LedgerScreen({
   const [confirm, setConfirm] = React.useState<{ kind: 'customer' | 'entry'; id: string } | null>(null)
   // staff default to the customer's last 10 transactions; the range filter is opt-in
   const [staffView, setStaffView] = React.useState<'last10' | 'range'>('last10')
+  const [importOpen, setImportOpen] = React.useState(false)
 
   const customer = customers.find((item) => item.id === customerId)
   if (!customer) return null
@@ -71,6 +76,34 @@ export function LedgerScreen({
         </div>
         {isAdmin && (
           <div className="flex gap-1.5">
+            {preferences.csvImportEnabled && (
+              <>
+                <Button
+                  size="iconSm"
+                  variant="ghost"
+                  aria-label={t('downloadCsvTemplate')}
+                  title={t('downloadCsvTemplate')}
+                  onClick={() =>
+                    downloadFile(
+                      `${customer.name.replace(/[^a-z0-9]+/gi, '-')}-entries.csv`,
+                      csvImportTemplate(),
+                      'text/csv',
+                    )
+                  }
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="iconSm"
+                  variant="ghost"
+                  aria-label={t('uploadCsvEntries')}
+                  title={t('uploadCsvEntries')}
+                  onClick={() => setImportOpen(true)}
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </>
+            )}
             <Button size="iconSm" variant="ghost" aria-label={t('editCustomer')} onClick={onEditCustomer}>
               <Pencil className="h-4 w-4" />
             </Button>
@@ -193,6 +226,11 @@ export function LedgerScreen({
                         {t('edited')} ×{entry.editCount}
                       </span>
                     )}
+                    {entry.importBatchId && (
+                      <span className="ml-1 rounded bg-primary-tint px-1 py-px text-[10px] font-medium text-primary-pressed">
+                        {t('csvImportedTag')}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="text-right">
@@ -275,6 +313,9 @@ export function LedgerScreen({
           }
         }}
       />
+      {preferences.csvImportEnabled && (
+        <ImportSheet open={importOpen} customer={customer} onClose={() => setImportOpen(false)} />
+      )}
     </div>
   )
 }

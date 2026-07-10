@@ -63,11 +63,14 @@ export type LandingPagePref = 'highestBalance' | 'lastEntries'
 export type AppPreferences = {
   dateFormat: DateFormatPref
   landingPage: LandingPagePref
+  /* Off hides the CSV bulk-entry buttons on the ledger screen entirely. */
+  csvImportEnabled: boolean
 }
 
 export const defaultPreferences: AppPreferences = {
   dateFormat: 'ddMMMyyyy',
   landingPage: 'highestBalance',
+  csvImportEnabled: true,
 }
 
 export type EntryType = 'debit' | 'credit'
@@ -105,6 +108,32 @@ export type LedgerEntry = {
   updatedBy?: string
   isEdited: boolean
   editCount: number
+  /* Present only on entries created via CSV bulk import — links back to the
+     import batch so the whole file's worth of entries can be reversed together. */
+  importBatchId?: string
+}
+
+export type ImportBatchStatus = 'active' | 'reversed'
+
+/* Audit record for one CSV bulk-entry upload. Never deleted — even after
+   reversal it stays as a permanent log of what was imported and undone. */
+export type ImportBatch = {
+  id: string
+  customerId: string
+  fileName: string
+  rowCount: number
+  entryCount: number
+  totalBill: number
+  totalCash: number
+  entryIds: string[]
+  /* Deterministic hash of the file's raw text — lets the upload sheet warn
+     before the exact same file is imported twice. */
+  fileHash: string
+  status: ImportBatchStatus
+  createdAt: string
+  createdBy: string
+  reversedAt?: string
+  reversedBy?: string
 }
 
 export type DateRange = {

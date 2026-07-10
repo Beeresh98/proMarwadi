@@ -69,6 +69,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // CSV bulk-entry audit log — admin-only; never deleted, only marked reversed
+    match /importBatches/{batchId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
     // deny everything else
     match /{document=**} {
       allow read, write: if false;

@@ -780,6 +780,21 @@ function PreferencesSection() {
           ]}
         />
       </div>
+      <div className="grid gap-2">
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
+          <FileSpreadsheet className="h-4 w-4" />
+          {t('csvBulkEntry')}
+        </p>
+        <p className="text-xs text-muted-foreground">{t('csvBulkEntryHint')}</p>
+        <SegmentedControl<'on' | 'off'>
+          value={preferences.csvImportEnabled ? 'on' : 'off'}
+          onChange={(next) => setPreferences({ csvImportEnabled: next === 'on' })}
+          options={[
+            { value: 'on', label: t('on') },
+            { value: 'off', label: t('off') },
+          ]}
+        />
+      </div>
     </section>
   )
 }
