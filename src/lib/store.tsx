@@ -163,6 +163,9 @@ type AppStore = {
   addStaff: (email: string, password: string, input: StaffInput) => Promise<void>
   updateStaff: (uid: string, input: StaffInput) => void
   deleteStaff: (uid: string) => void
+  /* Cloud-only: any signed-in user renames themselves (name field only —
+     Firestore rules block touching role/routes on your own profile). */
+  updateOwnName: (name: string) => void
   /* Staff only: routes allocated to the signed-in account. */
   allowedRouteIds: string[]
   preferences: AppPreferences
@@ -287,6 +290,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [cloudActive])
 
+  // Firestore permanently terminates a listener that errors (e.g. rules were
+  // deployed after the page loaded → permission-denied); it never retries on
+  // its own, leaving the list stuck empty until a full reload. Bumping this
+  // tick resubscribes the admin-only listeners below after a pause.
+  const [adminListenerRetry, setAdminListenerRetry] = React.useState(0)
+  const retryAdminListeners = React.useCallback(() => {
+    window.setTimeout(() => setAdminListenerRetry((tick) => tick + 1), 15000)
+  }, [])
+
   // users collection is admin-readable only — staff subscribing would get
   // permission-denied on the whole query, so gate on the live role
   React.useEffect(() => {
@@ -294,12 +306,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setStaffAccounts([])
       return
     }
-    return onSnapshot(collection(db, 'users'), (snapshot) =>
-      setStaffAccounts(
-        snapshot.docs.map((item) => ({ uid: item.id, ...(item.data() as UserProfile) })),
-      ),
+    return onSnapshot(
+      collection(db, 'users'),
+      (snapshot) =>
+        setStaffAccounts(
+          snapshot.docs.map((item) => ({ uid: item.id, ...(item.data() as UserProfile) })),
+        ),
+      retryAdminListeners,
     )
-  }, [cloudActive, role])
+  }, [cloudActive, role, adminListenerRetry, retryAdminListeners])
 
   // importBatches is admin-only in Firestore rules — same gating as staffAccounts
   React.useEffect(() => {
@@ -307,10 +322,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setImportBatches([])
       return
     }
-    return onSnapshot(collection(db, 'importBatches'), (snapshot) =>
-      setImportBatches(snapshot.docs.map((item) => item.data() as ImportBatch)),
+    return onSnapshot(
+      collection(db, 'importBatches'),
+      (snapshot) => setImportBatches(snapshot.docs.map((item) => item.data() as ImportBatch)),
+      retryAdminListeners,
     )
-  }, [cloudActive, role])
+  }, [cloudActive, role, adminListenerRetry, retryAdminListeners])
 
   const setLanguage = React.useCallback((next: Language) => {
     setLanguageState(next)
@@ -746,6 +763,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // live); the Firebase Auth login remains but lands on the no-access screen
       if (!cloudActive || !db) return
       cloudWrite(deleteDoc(doc(db, 'users', uid)))
+    },
+    updateOwnName: (name) => {
+      const trimmed = name.trim()
+      if (!trimmed || !cloudActive || !db || !auth.user) return
+      // merge keeps role/routes intact; auth.tsx's live profile watch picks it up
+      cloudWrite(setDoc(doc(db, 'users', auth.user.uid), { name: trimmed }, { merge: true }))
     },
     allowedRouteIds,
     preferences,

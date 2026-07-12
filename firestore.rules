@@ -30,6 +30,11 @@ service cloud.firestore {
       // admin manages staff accounts from the app, but can never touch their
       // own profile doc — no accidental self-demotion or lockout
       allow create, update, delete: if isAdmin() && request.auth.uid != userId;
+      // anyone may rename themselves — strictly the name field; role and
+      // route allocations on your own doc stay locked
+      allow update: if hasProfile() && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+        && request.resource.data.name is string;
     }
 
     match /customers/{customerId} {

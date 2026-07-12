@@ -7,6 +7,7 @@ import {
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   CloudUpload,
   Database,
   FileJson,
@@ -52,6 +53,86 @@ import {
   type StaffType,
   type UserRole,
 } from '../lib/types'
+
+/* Collapsible settings card: header is always visible, body folds away so the
+   page stays scannable. Sheets/dialogs inside are position:fixed, so they
+   escape the overflow-hidden fold without issue. */
+function SettingsCard({
+  icon: Icon,
+  title,
+  hint,
+  defaultOpen = false,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  hint?: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = React.useState(defaultOpen)
+  return (
+    <section className="rounded-[var(--radius-card)] border border-border bg-card">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="pressable flex w-full items-center gap-1.5 p-4 text-left"
+      >
+        <Icon className="h-4 w-4 shrink-0 text-secondary-text" />
+        <span className="flex-1 text-[13px] font-medium text-secondary-text">{title}</span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows] duration-200 ease-out',
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="grid gap-3 px-4 pb-4">
+            {hint && <p className="-mt-1.5 text-xs text-muted-foreground">{hint}</p>}
+            {children}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* Own display name — saved to users/{uid}.name; rules allow exactly this one
+   field on your own profile, so it works for admin and staff alike. */
+function OwnNameField() {
+  const { t, updateOwnName } = useApp()
+  const { profile } = useAuth()
+  const saved = profile?.name ?? ''
+  const [name, setName] = React.useState(saved)
+  React.useEffect(() => setName(saved), [saved])
+  const dirty = name.trim() !== '' && name.trim() !== saved
+  return (
+    <Field label={t('yourName')}>
+      <div className="flex gap-2.5">
+        <Input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => event.key === 'Enter' && dirty && updateOwnName(name)}
+          placeholder={t('yourName')}
+          className="flex-1"
+        />
+        <Button variant="secondary" disabled={!dirty} onClick={() => updateOwnName(name)} className="shrink-0">
+          <Save className="h-4 w-4" />
+          {t('save')}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">{t('yourNameHint')}</p>
+    </Field>
+  )
+}
 
 function LinkPhoneCard() {
   const { t } = useApp()
@@ -180,15 +261,7 @@ function RoutesSection() {
   }
 
   return (
-    <section className="grid gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4">
-      <div>
-        <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-          <MapPin className="h-4 w-4" />
-          {t('routes')}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{t('routesHint')}</p>
-      </div>
-
+    <SettingsCard icon={MapPin} title={t('routes')} hint={t('routesHint')}>
       {routes.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border-strong px-3 py-4 text-center text-xs text-muted-foreground">
           {t('noRoutesYet')}
@@ -297,7 +370,7 @@ function RoutesSection() {
         routeLabel={routeName(membersRouteId)}
         onClose={() => setMembersRouteId('')}
       />
-    </section>
+    </SettingsCard>
   )
 }
 
@@ -316,15 +389,7 @@ function BanksSection() {
   }
 
   return (
-    <section className="grid gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4">
-      <div>
-        <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-          <Landmark className="h-4 w-4" />
-          {t('banksUpi')}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{t('banksUpiHint')}</p>
-      </div>
-
+    <SettingsCard icon={Landmark} title={t('banksUpi')} hint={t('banksUpiHint')}>
       {paymentAccounts.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border-strong px-3 py-4 text-center text-xs text-muted-foreground">
           {t('noAccountsYet')}
@@ -413,7 +478,7 @@ function BanksSection() {
         }}
         onCancel={() => setDeleteId('')}
       />
-    </section>
+    </SettingsCard>
   )
 }
 
@@ -635,15 +700,7 @@ function StaffSection() {
   const [deleteId, setDeleteId] = React.useState('')
 
   return (
-    <section className="grid gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4">
-      <div>
-        <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-          <Users className="h-4 w-4" />
-          {t('staffAccounts')}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{t('staffAccountsHint')}</p>
-      </div>
-
+    <SettingsCard icon={Users} title={t('staffAccounts')} hint={t('staffAccountsHint')}>
       {staffAccounts.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border-strong px-3 py-4 text-center text-xs text-muted-foreground">
           {t('noStaffYet')}
@@ -706,7 +763,7 @@ function StaffSection() {
         editing={sheet.editing}
         onClose={() => setSheet({ open: false, editing: null })}
       />
-    </section>
+    </SettingsCard>
   )
 }
 
@@ -715,11 +772,7 @@ function StaffSection() {
 function YourRoutesSection() {
   const { t, routes, customers } = useApp()
   return (
-    <section className="grid gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4">
-      <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-        <MapPin className="h-4 w-4" />
-        {t('yourRoutes')}
-      </p>
+    <SettingsCard icon={MapPin} title={t('yourRoutes')} defaultOpen>
       {routes.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border-strong px-3 py-4 text-center text-xs text-muted-foreground">
           {t('noRoutesAllocatedWarning')}
@@ -739,7 +792,7 @@ function YourRoutesSection() {
           })}
         </div>
       )}
-    </section>
+    </SettingsCard>
   )
 }
 
@@ -747,11 +800,7 @@ function PreferencesSection() {
   const { t, language, preferences, setPreferences } = useApp()
 
   return (
-    <section className="grid gap-4 rounded-[var(--radius-card)] border border-border bg-card p-4">
-      <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-        <SlidersHorizontal className="h-4 w-4" />
-        {t('preferences')}
-      </p>
+    <SettingsCard icon={SlidersHorizontal} title={t('preferences')}>
       <div className="grid gap-2">
         <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
           <CalendarDays className="h-4 w-4" />
@@ -795,28 +844,25 @@ function PreferencesSection() {
           ]}
         />
       </div>
-    </section>
+    </SettingsCard>
   )
 }
 
 export function SettingsScreen() {
   const { t, language, setLanguage, role, setRole, isAdmin, isCloud, customers, entries, importLocalToCloud } =
     useApp()
-  const { mode, user, signOutUser } = useAuth()
+  const { mode, user, profile, signOutUser } = useAuth()
   const [imported, setImported] = React.useState<number | null>(null)
   const [importing, setImporting] = React.useState(false)
 
   return (
     <div className="space-y-4 animate-fade-up">
       {mode === 'cloud' && (
-        <section className="grid gap-4 rounded-[var(--radius-card)] border border-border bg-card p-4">
-          <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-            <UserRound className="h-4 w-4" />
-            {t('account')}
-          </p>
+        <SettingsCard icon={UserRound} title={t('account')} defaultOpen>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-[15px] font-medium">{user?.email}</p>
+              <p className="truncate text-[15px] font-medium">{profile?.name || user?.email}</p>
+              {profile?.name && <p className="truncate text-xs text-muted-foreground">{user?.email}</p>}
               <p className="mt-0.5 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1 rounded bg-primary-tint px-1.5 py-px font-medium text-primary-pressed">
                   <ShieldCheck className="h-3 w-3" />
@@ -829,25 +875,20 @@ export function SettingsScreen() {
               {t('signOut')}
             </Button>
           </div>
+          <OwnNameField />
           <LinkPhoneCard />
-        </section>
+        </SettingsCard>
       )}
 
-      <section className="grid gap-4 rounded-[var(--radius-card)] border border-border bg-card p-4">
-        <div className="grid gap-2">
-          <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-            <Languages className="h-4 w-4" />
-            {t('language')}
-          </p>
-          <SegmentedControl<Language>
-            value={language}
-            onChange={setLanguage}
-            options={[
-              { value: 'en', label: 'English' },
-              { value: 'hi', label: 'हिंदी' },
-            ]}
-          />
-        </div>
+      <SettingsCard icon={Languages} title={t('language')}>
+        <SegmentedControl<Language>
+          value={language}
+          onChange={setLanguage}
+          options={[
+            { value: 'en', label: 'English' },
+            { value: 'hi', label: 'हिंदी' },
+          ]}
+        />
         {mode === 'demo' && (
           <div className="grid gap-2">
             <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
@@ -865,7 +906,7 @@ export function SettingsScreen() {
             {!isAdmin && <p className="text-xs text-muted-foreground animate-fade-in">{t('staffRestriction')}</p>}
           </div>
         )}
-      </section>
+      </SettingsCard>
 
       {isAdmin && (
         <>
@@ -879,11 +920,7 @@ export function SettingsScreen() {
       {!isAdmin && isCloud && <YourRoutesSection />}
 
       {isAdmin && (
-        <section className="grid gap-2.5 rounded-[var(--radius-card)] border border-border bg-card p-4">
-          <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
-            <Database className="h-4 w-4" />
-            {t('backups')}
-          </p>
+        <SettingsCard icon={Database} title={t('backups')}>
           <Button
             variant="secondary"
             onClick={() =>
@@ -927,7 +964,7 @@ export function SettingsScreen() {
               )}
             </>
           )}
-        </section>
+        </SettingsCard>
       )}
 
       <p className="flex items-start gap-2 rounded-[var(--radius-card)] bg-muted p-3.5 text-xs text-secondary-text">
