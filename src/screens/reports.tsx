@@ -45,6 +45,7 @@ import {
   weekdayPattern,
   type PeriodGrain,
 } from '../lib/analytics'
+import { useAuth } from '../lib/auth'
 import { weekdayNames } from '../lib/i18n'
 import { currentMonthRange, customerBalance, entriesInRange, today, totalsForEntries } from '../lib/ledger'
 import {
@@ -139,7 +140,8 @@ function MeterRow({
 }
 
 function AnalyticsView() {
-  const { t, fmt, language, preferences, customers, entries, routes } = useApp()
+  const { t, fmt, language, preferences, customers, entries, routes, staffAccounts } = useApp()
+  const { user, profile } = useAuth()
   const [period, setPeriod] = React.useState<Period>('daily')
   const [custom, setCustom] = React.useState(() => ({ ...currentMonthRange(), to: today }))
   const [pdfSections, setPdfSections] = React.useState<string[]>([
@@ -171,8 +173,23 @@ function AnalyticsView() {
   const outstanding = customers.reduce((sum, customer) => sum + customerBalance(customer, entries), 0)
   const recoveryRate = billed > 0 ? Math.round((collected / billed) * 100) : collected > 0 ? 100 : 0
 
+  // Historical entries freeze createdBy as whatever name/email was current at
+  // the time — this relabels old rows to each account's current display name
+  // so a rename in Settings doesn't leave past collections stuck on the email.
+  const resolveCollectorName = React.useMemo(() => {
+    const byEmail: Record<string, string> = {}
+    for (const account of staffAccounts) {
+      if (account.email) byEmail[account.email] = account.name?.trim() || account.email
+    }
+    if (user?.email) byEmail[user.email] = profile?.name?.trim() || user.email
+    return (identifier: string) => byEmail[identifier] ?? identifier
+  }, [staffAccounts, user, profile])
+
   const modeSplit = React.useMemo(() => paymentModeSplit(entries, span.from, span.to), [entries, span.from, span.to])
-  const employees = React.useMemo(() => employeeCollections(entries, span.from, span.to), [entries, span.from, span.to])
+  const employees = React.useMemo(
+    () => employeeCollections(entries, span.from, span.to, resolveCollectorName),
+    [entries, span.from, span.to, resolveCollectorName],
+  )
   const weekdays = React.useMemo(() => weekdayPattern(entries, span.from, span.to), [entries, span.from, span.to])
   const routeStats = React.useMemo(
     () => routeAnalytics(routes, customers, entries, span.from, span.to),
@@ -221,7 +238,7 @@ function AnalyticsView() {
       weekday: weekdays,
       watchlist,
       customers: customerStats,
-      log: collectionsLog(customers, entries, span.from, span.to),
+      log: collectionsLog(customers, entries, span.from, span.to, resolveCollectorName),
       sections: sections as AnalyticsSection[],
       allCustomers: pdfSections.includes('allCustomers'),
     })

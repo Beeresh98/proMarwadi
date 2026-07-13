@@ -204,12 +204,21 @@ export type EmployeeStat = {
   average: number
 }
 
-/* Who collected how much — credits grouped by the recorded creator. */
-export function employeeCollections(entries: LedgerEntry[], from: string, to: string): EmployeeStat[] {
+/* Who collected how much — credits grouped by the recorded creator.
+   `resolveName` maps the raw createdBy string (often a login email, frozen
+   at entry-creation time) to that account's current display name, so
+   renaming a staff member in Settings relabels their past entries too
+   instead of leaving old rows stuck on the email. */
+export function employeeCollections(
+  entries: LedgerEntry[],
+  from: string,
+  to: string,
+  resolveName: (identifier: string) => string = (identifier) => identifier,
+): EmployeeStat[] {
   const byName = new Map<string, { total: number; count: number }>()
   for (const entry of entries) {
     if (entry.type !== 'credit' || entry.date < from || entry.date > to) continue
-    const name = entry.createdBy || '—'
+    const name = resolveName(entry.createdBy || '—')
     const slot = byName.get(name) ?? { total: 0, count: 0 }
     slot.total += entry.amount
     slot.count += 1
@@ -312,6 +321,7 @@ export function collectionsLog(
   entries: LedgerEntry[],
   from: string,
   to: string,
+  resolveName: (identifier: string) => string = (identifier) => identifier,
 ): CollectionLogRow[] {
   const nameById = new Map(customers.map((customer) => [customer.id, customer.name]))
   return entries
@@ -322,7 +332,7 @@ export function collectionsLog(
       customerName: nameById.get(entry.customerId) ?? '—',
       amount: entry.amount,
       mode: `${(entry.paymentMode ?? 'cash').toUpperCase()}${entry.bankName ? ` · ${entry.bankName}` : ''}${entry.upiApp ? ` · ${entry.upiApp}` : ''}`,
-      collector: entry.createdBy || '—',
+      collector: resolveName(entry.createdBy || '—'),
     }))
 }
 
