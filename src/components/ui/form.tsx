@@ -15,9 +15,20 @@ export function Label({
 }
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => (
+  ({ className, type, onWheel, ...props }, ref) => (
     <input
       ref={ref}
+      type={type}
+      // number inputs otherwise change value on mouse-wheel scroll while
+      // focused — blur so a scroll just scrolls the page, everywhere in the app
+      onWheel={
+        type === 'number'
+          ? (event) => {
+              event.currentTarget.blur()
+              onWheel?.(event)
+            }
+          : onWheel
+      }
       className={cn(
         'flex h-12 w-full rounded-[var(--radius-control)] border border-input bg-card px-3.5 py-2 text-[15px] outline-none transition-all duration-150 placeholder:text-muted-foreground hover:border-border-strong focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/40',
         className,
