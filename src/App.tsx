@@ -95,6 +95,7 @@ function App() {
   const [tab, setTab] = React.useState<Tab>('home')
   const [openCustomerId, setOpenCustomerId] = React.useState('')
   const [districtFilter, setDistrictFilter] = React.useState('')
+  const [routeFilter, setRouteFilter] = React.useState('')
   const [entryDraft, setEntryDraft] = React.useState<EntryDraft | null>(null)
   const [customerSheet, setCustomerSheet] = React.useState<{ open: boolean; editing: Customer | null }>({
     open: false,
@@ -184,8 +185,9 @@ function App() {
             />
           ) : activeTab === 'home' ? (
             <HomeScreen
-              onOpenDistrict={(district) => {
-                setDistrictFilter(district)
+              onOpenRoute={(routeId) => {
+                setRouteFilter(routeId)
+                setDistrictFilter('')
                 setTab('customers')
               }}
               onOpenCustomer={setOpenCustomerId}
@@ -195,6 +197,8 @@ function App() {
             <CustomersScreen
               districtFilter={districtFilter}
               onDistrictFilterChange={setDistrictFilter}
+              routeFilter={routeFilter}
+              onRouteFilterChange={setRouteFilter}
               onOpenCustomer={setOpenCustomerId}
               onAddCustomer={() => setCustomerSheet({ open: true, editing: null })}
             />

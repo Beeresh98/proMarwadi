@@ -4,7 +4,7 @@ import { RouteMembersSheet } from '../components/app/route-members-sheet'
 import { DatePicker, formatDisplayDate } from '../components/ui/date-picker'
 import { Button } from '../components/ui/button'
 import { Picker } from '../components/ui/picker'
-import { customerBalance, today } from '../lib/ledger'
+import { customerBalance, dayCollection, today } from '../lib/ledger'
 import { useApp } from '../lib/store'
 import { cn } from '../lib/utils'
 
@@ -34,19 +34,22 @@ export function CollectionScreen() {
   const allRows = customers
     .filter((customer) => customer.routeId === routeId)
     .map((customer) => {
-      // that day's bills are printed; cash/bank stay blank for the agent's pen
-      const billToday = entries
-        .filter(
-          (entry) => entry.customerId === customer.id && entry.date === date && entry.type === 'debit',
-        )
-        .reduce((sum, entry) => sum + entry.amount, 0)
-      return { customer, billToday, balance: customerBalance(customer, entries, date) }
+      const { bill, cash, bank } = dayCollection(customer.id, entries, date)
+      return { customer, bill, cash, bank, balance: customerBalance(customer, entries, date) }
     })
-    .filter((row) => row.balance > 0 || row.billToday > 0)
+    .filter((row) => row.balance > 0 || row.bill > 0 || row.cash > 0 || row.bank > 0)
     .sort((a, b) => b.balance - a.balance)
 
   const rows = allRows.filter((row) => !excludedIds.has(row.customer.id))
-  const total = rows.reduce((sum, row) => sum + row.balance, 0)
+  const totals = rows.reduce(
+    (sum, row) => ({
+      bill: sum.bill + row.bill,
+      cash: sum.cash + row.cash,
+      bank: sum.bank + row.bank,
+      balance: sum.balance + row.balance,
+    }),
+    { bill: 0, cash: 0, bank: 0, balance: 0 },
+  )
 
   function toggleExcluded(customerId: string) {
     setExcludedIds((current) => {
@@ -136,7 +139,7 @@ export function CollectionScreen() {
                 </tr>
               </thead>
               <tbody>
-                {(selectMode ? allRows : rows).map(({ customer, billToday, balance }, index) => {
+                {(selectMode ? allRows : rows).map(({ customer, bill, cash, bank, balance }, index) => {
                   const excluded = excludedIds.has(customer.id)
                   return (
                     <tr key={customer.id} className={cn('print-row', excluded && 'opacity-40 print:hidden')}>
@@ -165,26 +168,45 @@ export function CollectionScreen() {
                           <p className="tnum text-xs text-muted-foreground print:text-black/60">{customer.phone}</p>
                         )}
                       </td>
-                      {billToday > 0 ? (
-                        <td className={`${cell} tnum text-right text-[15px] print:text-black`}>{fmt(billToday)}</td>
+                      {bill > 0 ? (
+                        <td className={`${cell} tnum text-right text-[15px] print:text-black`}>{fmt(bill)}</td>
                       ) : (
                         <td className={blankCell} />
                       )}
-                      <td className={blankCell} />
-                      <td className={blankCell} />
+                      {cash > 0 ? (
+                        <td className={`${cell} tnum text-right text-[15px] text-credit print:text-black`}>{fmt(cash)}</td>
+                      ) : (
+                        <td className={blankCell} />
+                      )}
+                      {bank > 0 ? (
+                        <td className={`${cell} tnum text-right text-[15px] text-credit print:text-black`}>{fmt(bank)}</td>
+                      ) : (
+                        <td className={blankCell} />
+                      )}
                       <td className={`${cell} tnum text-right text-[15px] font-semibold text-debit print:text-black`}>
                         {fmt(balance)}
                       </td>
                     </tr>
                   )
                 })}
-                <tr className="print-row">
-                  <td className={`${cell} border-none`} colSpan={4} />
-                  <td className={`${cell} text-right text-xs font-medium uppercase tracking-wide text-muted-foreground print:text-black/70`}>
-                    {t('totalPending')}
+                <tr className="print-row border-t-2 border-border-strong print:border-t-2 print:border-black/60">
+                  <td
+                    className={`${cell} text-right text-xs font-medium uppercase tracking-wide text-muted-foreground print:text-black/70`}
+                    colSpan={2}
+                  >
+                    {t('total')}
+                  </td>
+                  <td className={`${cell} tnum text-right text-[15px] font-semibold print:text-black`}>
+                    {fmt(totals.bill)}
+                  </td>
+                  <td className={`${cell} tnum text-right text-[15px] font-semibold text-credit print:text-black`}>
+                    {fmt(totals.cash)}
+                  </td>
+                  <td className={`${cell} tnum text-right text-[15px] font-semibold text-credit print:text-black`}>
+                    {fmt(totals.bank)}
                   </td>
                   <td className={`${cell} tnum text-right text-[15px] font-semibold text-debit print:text-black`}>
-                    {fmt(total)}
+                    {fmt(totals.balance)}
                   </td>
                 </tr>
               </tbody>

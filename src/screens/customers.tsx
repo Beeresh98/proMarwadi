@@ -16,15 +16,19 @@ const PAGE_SIZE = 10
 export function CustomersScreen({
   districtFilter,
   onDistrictFilterChange,
+  routeFilter,
+  onRouteFilterChange,
   onOpenCustomer,
   onAddCustomer,
 }: {
   districtFilter: string
   onDistrictFilterChange: (district: string) => void
+  routeFilter: string
+  onRouteFilterChange: (routeId: string) => void
   onOpenCustomer: (customerId: string) => void
   onAddCustomer: () => void
 }) {
-  const { t, customers, entries, isAdmin } = useApp()
+  const { t, customers, entries, isAdmin, routes } = useApp()
   const [search, setSearch] = React.useState('')
   const [letter, setLetter] = React.useState('')
   const [sort, setSort] = React.useState<SortMode>('nameAsc')
@@ -33,7 +37,7 @@ export function CustomersScreen({
   // any filter change jumps back to the first page
   React.useEffect(() => {
     setPage(0)
-  }, [search, letter, sort, districtFilter])
+  }, [search, letter, sort, districtFilter, routeFilter])
 
   const districts = Array.from(new Set(customers.map((customer) => customer.district)))
     .filter(Boolean)
@@ -42,12 +46,14 @@ export function CustomersScreen({
   const lettersPresent = new Set(
     customers
       .filter((customer) => !districtFilter || customer.district === districtFilter)
+      .filter((customer) => !routeFilter || customer.routeId === routeFilter)
       .map((customer) => customer.name.trim().charAt(0).toUpperCase()),
   )
 
   const query = search.trim().toLowerCase()
   const visible = customers
     .filter((customer) => !districtFilter || customer.district === districtFilter)
+    .filter((customer) => !routeFilter || customer.routeId === routeFilter)
     .filter((customer) => !letter || customer.name.trim().toUpperCase().startsWith(letter))
     .filter((customer) => {
       if (!query) return true
@@ -69,24 +75,32 @@ export function CustomersScreen({
 
   return (
     <div className="space-y-5 animate-fade-up">
-      <div className="flex gap-2.5">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-10"
-            placeholder={t('searchCustomer')}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-10"
+          placeholder={t('searchCustomer')}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5">
         <Picker
-          className="w-36 shrink-0"
-          align="right"
           value={districtFilter}
           onChange={onDistrictFilterChange}
           options={[
             { value: '', label: t('allDistricts') },
             ...districts.map((district) => ({ value: district, label: district })),
+          ]}
+        />
+        <Picker
+          align="right"
+          value={routeFilter}
+          onChange={onRouteFilterChange}
+          options={[
+            { value: '', label: t('allRoutes') },
+            ...routes.map((route) => ({ value: route.id, label: route.name })),
           ]}
         />
       </div>

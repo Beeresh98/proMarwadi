@@ -126,6 +126,41 @@ export function districtStats(
   return { customers: districtCustomers.length, receivable, ...totals }
 }
 
+export function routeStats(
+  routeId: string,
+  customers: Customer[],
+  entries: LedgerEntry[],
+  range: DateRange,
+) {
+  const routeCustomers = customers.filter((customer) => customer.routeId === routeId)
+  const ids = new Set(routeCustomers.map((customer) => customer.id))
+  const rangedEntries = entriesInRange(entries, range).filter((entry) => ids.has(entry.customerId))
+  const totals = totalsForEntries(rangedEntries)
+  const receivable = routeCustomers.reduce((sum, customer) => sum + customerBalance(customer, entries), 0)
+  return { customers: routeCustomers.length, receivable, ...totals }
+}
+
+/* One customer's bill/cash/bank movement for a single day, for the printed
+   collection sheet. Cash/bank split mirrors the reports screen's convention:
+   a credit entry with no recorded paymentMode counts as cash, and UPI is
+   folded into bank since the paper register only has two payment columns. */
+export function dayCollection(customerId: string, entries: LedgerEntry[], date: string) {
+  const dayEntries = entries.filter((entry) => entry.customerId === customerId && entry.date === date)
+  return dayEntries.reduce(
+    (totals, entry) => {
+      if (entry.type === 'debit') {
+        totals.bill += entry.amount
+      } else if (entry.paymentMode === 'bank' || entry.paymentMode === 'upi') {
+        totals.bank += entry.amount
+      } else {
+        totals.cash += entry.amount
+      }
+      return totals
+    },
+    { bill: 0, cash: 0, bank: 0 },
+  )
+}
+
 export function ledgerRows(customer: Customer, entries: LedgerEntry[], range: DateRange) {
   let runningBalance = customer.openingBalance
   return entries

@@ -1,29 +1,26 @@
 import * as React from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, MapPin } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, Route as RouteIcon } from 'lucide-react'
 import { Avatar, Balance } from '../components/app/money'
 import { Button } from '../components/ui/button'
 import { formatDisplayDate } from '../components/ui/date-picker'
-import { customerBalance, districtStats, entriesInRange, totalsForEntries } from '../lib/ledger'
+import { customerBalance, entriesInRange, routeStats, totalsForEntries } from '../lib/ledger'
 import { useApp } from '../lib/store'
 import type { EntryType } from '../lib/types'
 import { cn } from '../lib/utils'
 
 export function HomeScreen({
-  onOpenDistrict,
+  onOpenRoute,
   onOpenCustomer,
   onNewEntry,
 }: {
-  onOpenDistrict: (district: string) => void
+  onOpenRoute: (routeId: string) => void
   onOpenCustomer: (customerId: string) => void
   onNewEntry: (type: EntryType) => void
 }) {
-  const { t, fmt, language, customers, entries, range, preferences } = useApp()
+  const { t, fmt, language, customers, entries, range, preferences, routes } = useApp()
 
   const totalReceivable = customers.reduce((sum, customer) => sum + customerBalance(customer, entries), 0)
   const monthTotals = totalsForEntries(entriesInRange(entries, range))
-  const districts = Array.from(new Set(customers.map((customer) => customer.district)))
-    .filter(Boolean)
-    .sort()
 
   const carouselRef = React.useRef<HTMLDivElement>(null)
   const [carousel, setCarousel] = React.useState({ page: 0, pages: 1 })
@@ -43,7 +40,7 @@ export function HomeScreen({
     updateCarousel()
     window.addEventListener('resize', updateCarousel)
     return () => window.removeEventListener('resize', updateCarousel)
-  }, [updateCarousel, districts.length])
+  }, [updateCarousel, routes.length])
 
   function scrollToPage(page: number) {
     const el = carouselRef.current
@@ -82,71 +79,78 @@ export function HomeScreen({
       </section>
 
       <section>
-        <h2 className="mb-3 text-[13px] font-medium text-secondary-text">{t('districts')}</h2>
-        <div className="relative">
-          {carousel.pages > 1 && (
-            <>
-              <button
-                type="button"
-                aria-label="Previous"
-                disabled={carousel.page === 0}
-                onClick={() => scrollToPage(carousel.page - 1)}
-                className="pressable absolute -left-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-secondary-text shadow-[0_2px_10px_rgba(44,44,42,0.14)] hover:text-foreground disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Next"
-                disabled={carousel.page === carousel.pages - 1}
-                onClick={() => scrollToPage(carousel.page + 1)}
-                className="pressable absolute -right-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-secondary-text shadow-[0_2px_10px_rgba(44,44,42,0.14)] hover:text-foreground disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </>
-          )}
-          <div
-            ref={carouselRef}
-            onScroll={updateCarousel}
-            className="no-scrollbar stagger -my-3 flex snap-x snap-mandatory gap-3.5 overflow-x-auto py-3"
-          >
-            {districts.map((district) => {
-              const stats = districtStats(district, customers, entries, range)
-              return (
-                <button
-                  key={district}
-                  type="button"
-                  onClick={() => onOpenDistrict(district)}
-                  className="pressable liftable w-[46%] shrink-0 snap-start rounded-[var(--radius-card)] border border-border/70 bg-fill p-4 text-left hover:border-primary-accent hover:bg-card sm:w-[31.5%]"
-                >
-                  <p className="flex items-center gap-1.5 text-[15px] font-medium">
-                    <MapPin className="h-3.5 w-3.5 text-primary" />
-                    {district}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {stats.customers} {stats.customers === 1 ? t('customerWord') : t('customersWord')}
-                  </p>
-                  <p
-                    className={cn(
-                      'tnum mt-2 text-[17px] font-medium',
-                      stats.receivable > 0 ? 'text-primary-pressed' : 'text-muted-foreground',
-                    )}
-                  >
-                    {fmt(stats.receivable)}
-                  </p>
-                </button>
-              )
-            })}
+        <h2 className="mb-3 text-[13px] font-medium text-secondary-text">{t('routes')}</h2>
+        {routes.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-[var(--radius-card)] border border-dashed border-border-strong py-8 text-center">
+            <RouteIcon className="h-6 w-6 text-border-strong" />
+            <p className="max-w-56 text-sm text-muted-foreground">{t('noRoutesYet')}</p>
           </div>
-        </div>
+        ) : (
+          <div className="relative">
+            {carousel.pages > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Previous"
+                  disabled={carousel.page === 0}
+                  onClick={() => scrollToPage(carousel.page - 1)}
+                  className="pressable absolute -left-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-secondary-text shadow-[0_2px_10px_rgba(44,44,42,0.14)] hover:text-foreground disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next"
+                  disabled={carousel.page === carousel.pages - 1}
+                  onClick={() => scrollToPage(carousel.page + 1)}
+                  className="pressable absolute -right-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-secondary-text shadow-[0_2px_10px_rgba(44,44,42,0.14)] hover:text-foreground disabled:opacity-40"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </>
+            )}
+            <div
+              ref={carouselRef}
+              onScroll={updateCarousel}
+              className="no-scrollbar stagger -my-3 flex snap-x snap-mandatory gap-3.5 overflow-x-auto py-3"
+            >
+              {routes.map((route) => {
+                const stats = routeStats(route.id, customers, entries, range)
+                return (
+                  <button
+                    key={route.id}
+                    type="button"
+                    onClick={() => onOpenRoute(route.id)}
+                    className="pressable liftable w-[46%] shrink-0 snap-start rounded-[var(--radius-card)] border border-border/70 bg-fill p-4 text-left hover:border-primary-accent hover:bg-card sm:w-[31.5%]"
+                  >
+                    <p className="flex items-center gap-1.5 text-[15px] font-medium">
+                      <RouteIcon className="h-3.5 w-3.5 text-primary" />
+                      {route.name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {stats.customers} {stats.customers === 1 ? t('customerWord') : t('customersWord')}
+                    </p>
+                    <p
+                      className={cn(
+                        'tnum mt-2 text-[17px] font-medium',
+                        stats.receivable > 0 ? 'text-primary-pressed' : 'text-muted-foreground',
+                      )}
+                    >
+                      {fmt(stats.receivable)}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
         {carousel.pages > 1 && (
           <div className="mt-3 flex justify-center gap-1.5">
             {Array.from({ length: carousel.pages }).map((_, index) => (
               <button
                 key={index}
                 type="button"
-                aria-label={`${t('districts')} ${index + 1}`}
+                aria-label={`${t('routes')} ${index + 1}`}
                 onClick={() => scrollToPage(index)}
                 className={cn(
                   'h-1.5 rounded-full transition-all duration-200',
