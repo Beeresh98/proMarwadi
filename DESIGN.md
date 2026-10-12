@@ -51,6 +51,7 @@ Defined in `src/index.css`; everything respects `prefers-reduced-motion`.
 - `.pressable` — scale(0.97) press feedback on every interactive control.
 - `.liftable` — hover lift for cards (pointer devices only).
 - `.stagger` — staggered fade-up entrance for lists (caps at 9+ children).
+- `.flash-row` — teal wash that fades out on a just-saved list row (Home recent entries, Ledger).
 - `animate-fade-up` / `animate-pop-in` / `animate-sheet-up` — screen, popover, and
   sheet entrances. Balance amounts re-animate on change via `key={amount}`.
 
@@ -59,5 +60,8 @@ Defined in `src/index.css`; everything respects `prefers-reduced-motion`.
 - Screens live in `src/screens/`; shell + navigation in `src/App.tsx`;
   state in `src/lib/store.tsx` (context over localStorage, Firebase-ready).
 - Mobile: single column, bottom tab bar, sticky give/got action bar above it.
+- Bulk entry (`screens/bulk-entry.tsx`) is a full screen, not a sheet: one composer (date and customer
+  stay between entries, separate Bill − / Received + amount fields) above a list of added entries
+  (table columns on sm+), sticky totals + Save.
 - Desktop (`lg:`): fixed 240px sidebar, content centered at max-w-2xl.
 - Radii: 8px controls (`--radius-control`), 14px cards (`--radius-card`).

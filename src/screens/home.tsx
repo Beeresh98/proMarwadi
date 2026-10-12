@@ -1,5 +1,12 @@
 import * as React from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, Route as RouteIcon } from 'lucide-react'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  ListPlus,
+  Route as RouteIcon,
+} from 'lucide-react'
 import { Avatar, Balance } from '../components/app/money'
 import { Button } from '../components/ui/button'
 import { formatDisplayDate } from '../components/ui/date-picker'
@@ -12,12 +19,17 @@ export function HomeScreen({
   onOpenRoute,
   onOpenCustomer,
   onNewEntry,
+  onBulkEntry,
+  flashEntryId,
 }: {
   onOpenRoute: (routeId: string) => void
   onOpenCustomer: (customerId: string) => void
   onNewEntry: (type: EntryType) => void
+  onBulkEntry: () => void
+  /* Just-saved entry to highlight in the recent-entries list. */
+  flashEntryId: string
 }) {
-  const { t, fmt, language, customers, entries, range, preferences, routes } = useApp()
+  const { t, fmt, language, customers, entries, range, preferences, routes, isAdmin } = useApp()
 
   const totalReceivable = customers.reduce((sum, customer) => sum + customerBalance(customer, entries), 0)
   const monthTotals = totalsForEntries(entriesInRange(entries, range))
@@ -62,7 +74,20 @@ export function HomeScreen({
   return (
     <div className="space-y-6 animate-fade-up">
       <section className="rounded-[var(--radius-card)] bg-hero p-5 text-hero-foreground lg:p-6">
-        <p className="text-[13px] text-hero-muted">{t('totalToReceive')}</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px] text-hero-muted">{t('totalToReceive')}</p>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onBulkEntry}
+              title={t('bulkEntryHint')}
+              className="pressable -my-1 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-white/20"
+            >
+              <ListPlus className="h-3.5 w-3.5" />
+              {t('bulkEntry')}
+            </button>
+          )}
+        </div>
         <p key={totalReceivable} className="tnum mt-0.5 text-[34px] font-medium leading-tight tracking-tight animate-fade-up">
           {fmt(totalReceivable)}
         </p>
@@ -77,6 +102,7 @@ export function HomeScreen({
           </span>
         </div>
       </section>
+
 
       <section>
         <h2 className="mb-3 text-[13px] font-medium text-secondary-text">{t('routes')}</h2>
@@ -171,7 +197,10 @@ export function HomeScreen({
                 key={entry.id}
                 type="button"
                 onClick={() => customer && onOpenCustomer(customer.id)}
-                className="pressable group flex w-full items-center gap-3.5 border-b border-border py-3.5 text-left last:border-b-0"
+                className={cn(
+                  'pressable group flex w-full items-center gap-3.5 border-b border-border py-3.5 text-left last:border-b-0',
+                  entry.id === flashEntryId && 'flash-row',
+                )}
               >
                 <Avatar name={customer?.name ?? '?'} />
                 <div className="min-w-0 flex-1">

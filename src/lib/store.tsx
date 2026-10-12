@@ -129,7 +129,9 @@ type AppStore = {
   addCustomer: (input: CustomerInput) => Customer
   updateCustomer: (id: string, input: CustomerInput) => void
   deleteCustomer: (id: string) => void
-  addEntry: (input: EntryInput) => void
+  addEntry: (input: EntryInput) => LedgerEntry
+  /* Bulk entry screen — many entries in one batched write. */
+  addEntries: (inputs: EntryInput[]) => LedgerEntry[]
   updateEntry: (id: string, input: EntryInput) => void
   deleteEntry: (id: string) => void
   importLocalToCloud: () => Promise<number>
@@ -170,6 +172,8 @@ type AppStore = {
   allowedRouteIds: string[]
   preferences: AppPreferences
   setPreferences: (next: Partial<AppPreferences>) => void
+  /* preferences.defaultPaymentMode, else the starred account's type, else cash. */
+  defaultPaymentMode: PaymentMode
   /* Firestore error code of the most recent failed cloud write ('' = none).
      Writes are fire-and-forget for snappy UI, so failures land here instead
      of dying silently as unhandled rejections. */
@@ -453,6 +457,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       if (cloudActive && db) cloudWrite(setDoc(doc(db, 'ledgerEntries', entry.id), stripUndefined(entry)))
       else persistEntries([...entries, entry])
+      return entry
+    },
+    addEntries: (inputs) => {
+      const nowIso = new Date().toISOString()
+      const newEntries: LedgerEntry[] = inputs.map((input) => ({
+        id: makeId('entry'),
+        ...input,
+        createdAt: nowIso,
+        createdBy: actorName,
+        isEdited: false,
+        editCount: 0,
+      }))
+      if (cloudActive && db) {
+        // Firestore caps a batch at 500 writes — chunk well under it
+        for (let start = 0; start < newEntries.length; start += 450) {
+          const batchWrite = writeBatch(db)
+          newEntries
+            .slice(start, start + 450)
+            .forEach((entry) => batchWrite.set(doc(db!, 'ledgerEntries', entry.id), stripUndefined(entry)))
+          cloudWrite(batchWrite.commit())
+        }
+      } else {
+        persistEntries([...entries, ...newEntries])
+      }
+      return newEntries
     },
     updateEntry: (id, input) => {
       const existing = entries.find((entry) => entry.id === id)
@@ -778,6 +807,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       saveStored('promarwadi-preferences', merged)
       if (cloudActive && db) cloudWrite(setDoc(doc(db, 'meta', 'preferences'), merged, { merge: true }))
     },
+    defaultPaymentMode:
+      preferences.defaultPaymentMode ?? paymentAccounts.find((account) => account.isDefault)?.type ?? 'cash',
     syncError,
     clearSyncError: () => setSyncError(''),
   }

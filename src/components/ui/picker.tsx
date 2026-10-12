@@ -119,6 +119,7 @@ export function Picker({
   className,
   align = 'left',
   disabled = false,
+  menuWidth = 'anchor',
 }: {
   value: string
   options: PickerOption[]
@@ -129,6 +130,9 @@ export function Picker({
   className?: string
   align?: 'left' | 'right'
   disabled?: boolean
+  /* Dropdown width — a fixed px width lets a narrow trigger (e.g. a bulk
+     entry row) open a menu wide enough for full customer names. */
+  menuWidth?: 'anchor' | number
 }) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
@@ -173,7 +177,7 @@ export function Picker({
         />
       </button>
 
-      <Popover open={open} anchorRef={anchorRef} align={align} className="max-h-72 overflow-auto p-1.5">
+      <Popover open={open} anchorRef={anchorRef} align={align} width={menuWidth} className="max-h-72 overflow-auto p-1.5">
         <div role="listbox">
           {searchable && (
             <div className="sticky top-0 z-10 -m-1.5 mb-1 border-b border-border bg-card p-2">

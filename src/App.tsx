@@ -4,9 +4,11 @@ import { CustomerSheet } from './components/app/customer-sheet'
 import { EntrySheet, type EntryDraft } from './components/app/entry-sheet'
 import { useAuth } from './lib/auth'
 import { useApp } from './lib/store'
-import type { Customer, EntryType } from './lib/types'
+import type { Customer, EntryType, LedgerEntry } from './lib/types'
 import { cn } from './lib/utils'
 import { Button } from './components/ui/button'
+import { ConfirmDialog } from './components/ui/sheet'
+import { BulkEntryScreen } from './screens/bulk-entry'
 import { CollectionScreen } from './screens/collection'
 import { CustomersScreen } from './screens/customers'
 import { HomeScreen } from './screens/home'
@@ -97,6 +99,13 @@ function App() {
   const [districtFilter, setDistrictFilter] = React.useState('')
   const [routeFilter, setRouteFilter] = React.useState('')
   const [entryDraft, setEntryDraft] = React.useState<EntryDraft | null>(null)
+  // bulk entry screen (admin only); key remounts it fresh on every open
+  const [bulk, setBulk] = React.useState<{ customerId?: string; key: number } | null>(null)
+  const [bulkDirty, setBulkDirty] = React.useState(0)
+  // navigation waiting on the "discard unsaved bulk rows?" confirm
+  const [pendingLeave, setPendingLeave] = React.useState<(() => void) | null>(null)
+  const [flashEntryId, setFlashEntryId] = React.useState('')
+  const flashTimer = React.useRef(0)
   const [customerSheet, setCustomerSheet] = React.useState<{ open: boolean; editing: Customer | null }>({
     open: false,
     editing: null,
@@ -110,9 +119,39 @@ function App() {
     : ['customers', 'collection', 'settings']
   const activeTab: Tab = allowedTabs.includes(tab) ? tab : isAdmin ? 'home' : 'collection'
 
+  // leaving the bulk screen with typed amounts asks first
+  function guardLeave(action: () => void) {
+    if (bulk && bulkDirty > 0) setPendingLeave(() => action)
+    else action()
+  }
+
+  function closeBulk() {
+    setBulk(null)
+    setBulkDirty(0)
+  }
+
   function navigate(next: Tab) {
-    setTab(next)
-    setOpenCustomerId('')
+    guardLeave(() => {
+      closeBulk()
+      setTab(next)
+      setOpenCustomerId('')
+    })
+  }
+
+  function openBulk(customerId?: string) {
+    setBulk({ customerId, key: Date.now() })
+    window.scrollTo({ top: 0 })
+  }
+
+  // a new entry lands at the top of the list — bring the page back up to it
+  // and wash the row so it's easy to spot. Edits keep the scroll position.
+  function onEntrySaved(entry: LedgerEntry, isNew: boolean) {
+    if (!isNew) return
+    // next frame: the sheet's body scroll-lock is released by then
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+    setFlashEntryId(entry.id)
+    window.clearTimeout(flashTimer.current)
+    flashTimer.current = window.setTimeout(() => setFlashEntryId(''), 1700)
   }
 
   function startEntry(type: EntryType, customerId = '') {
@@ -139,7 +178,7 @@ function App() {
       <aside className="hidden print:!hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col lg:gap-1.5 lg:border-r lg:border-border lg:bg-card lg:p-5">
         <p className="mb-6 px-3 pt-1 text-[19px] font-semibold tracking-tight text-primary-pressed">{t('appName')}</p>
         {navItems.map((item) => {
-          const active = activeTab === item.tab && !openCustomer
+          const active = activeTab === item.tab && !openCustomer && !bulk
           return (
             <button
               key={item.tab}
@@ -164,24 +203,33 @@ function App() {
           <div className="flex items-center justify-between px-4 py-3">
             <h1 className="text-[17px] font-medium text-primary-pressed">{t('appName')}</h1>
             <span className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground">
-              {openCustomer ? t('ledger') : navItems.find((item) => item.tab === activeTab)?.label}
+              {bulk ? t('bulkEntry') : openCustomer ? t('ledger') : navItems.find((item) => item.tab === activeTab)?.label}
             </span>
           </div>
         </header>
 
         <main className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 print:p-0 lg:px-10 lg:pb-10 lg:pt-8">
-          {!openCustomer && (
+          {!openCustomer && !bulk && (
             <h1 className="mb-6 hidden text-[22px] font-semibold tracking-tight print:!hidden lg:block">
               {navItems.find((item) => item.tab === activeTab)?.label}
             </h1>
           )}
-          {openCustomer ? (
+          {bulk && isAdmin ? (
+            <BulkEntryScreen
+              key={bulk.key}
+              initialCustomerId={bulk.customerId}
+              onBack={() => guardLeave(closeBulk)}
+              onDirtyChange={setBulkDirty}
+            />
+          ) : openCustomer ? (
             <LedgerScreen
               key={openCustomer.id}
               customerId={openCustomer.id}
               onBack={() => setOpenCustomerId('')}
               onEditCustomer={() => setCustomerSheet({ open: true, editing: openCustomer })}
               onEntry={setEntryDraft}
+              onBulkEntry={() => openBulk(openCustomer.id)}
+              flashEntryId={flashEntryId}
             />
           ) : activeTab === 'home' ? (
             <HomeScreen
@@ -192,6 +240,8 @@ function App() {
               }}
               onOpenCustomer={setOpenCustomerId}
               onNewEntry={startEntry}
+              onBulkEntry={() => openBulk()}
+              flashEntryId={flashEntryId}
             />
           ) : activeTab === 'customers' ? (
             <CustomersScreen
@@ -215,7 +265,7 @@ function App() {
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden">
         <div className="mx-auto flex max-w-xl">
           {navItems.map((item) => {
-            const active = activeTab === item.tab && !openCustomer
+            const active = activeTab === item.tab && !openCustomer && !bulk
             return (
               <button
                 key={item.tab}
@@ -242,7 +292,18 @@ function App() {
       </nav>
 
       <SyncErrorToast />
-      <EntrySheet draft={entryDraft} onClose={() => setEntryDraft(null)} />
+      <EntrySheet draft={entryDraft} onClose={() => setEntryDraft(null)} onSaved={onEntrySaved} />
+      <ConfirmDialog
+        open={pendingLeave !== null}
+        message={t('discardUnsaved').replace('{value}', String(bulkDirty))}
+        confirmLabel={t('discard')}
+        cancelLabel={t('cancel')}
+        onCancel={() => setPendingLeave(null)}
+        onConfirm={() => {
+          pendingLeave?.()
+          setPendingLeave(null)
+        }}
+      />
       <CustomerSheet
         open={customerSheet.open}
         editing={customerSheet.editing}

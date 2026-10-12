@@ -49,6 +49,7 @@ import {
   type Language,
   type LandingPagePref,
   type PaymentAccountType,
+  type PaymentMode,
   type StaffAccount,
   type StaffType,
   type UserRole,
@@ -376,6 +377,7 @@ function RoutesSection() {
 
 function BanksSection() {
   const { t, paymentAccounts, addPaymentAccount, deletePaymentAccount, setDefaultPaymentAccount } = useApp()
+  const { setPreferences, defaultPaymentMode } = useApp()
   const [type, setType] = React.useState<PaymentAccountType>('bank')
   const [name, setName] = React.useState('')
   const [detail, setDetail] = React.useState('')
@@ -390,12 +392,28 @@ function BanksSection() {
 
   return (
     <SettingsCard icon={Landmark} title={t('banksUpi')} hint={t('banksUpiHint')}>
+      <div className="grid gap-2 rounded-xl bg-fill p-3">
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-secondary-text">
+          <Star className="h-4 w-4" />
+          {t('defaultPaymentMode')}
+        </p>
+        <p className="text-xs text-muted-foreground">{t('defaultPaymentModeHint')}</p>
+        <SegmentedControl<PaymentMode>
+          value={defaultPaymentMode}
+          onChange={(defaultPaymentMode) => setPreferences({ defaultPaymentMode })}
+          options={[
+            { value: 'cash', label: t('cash'), activeClassName: 'text-credit' },
+            { value: 'bank', label: t('bank'), activeClassName: 'text-credit' },
+            { value: 'upi', label: t('upi'), activeClassName: 'text-credit' },
+          ]}
+        />
+      </div>
       {paymentAccounts.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border-strong px-3 py-4 text-center text-xs text-muted-foreground">
           {t('noAccountsYet')}
         </p>
       ) : (
-        <div className="stagger grid">
+        <div className="stagger grid min-w-0">
           {paymentAccounts.map((account) => (
             <div key={account.id} className="flex items-center gap-2.5 border-b border-border py-2.5 last:border-b-0">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-tint text-primary-pressed">

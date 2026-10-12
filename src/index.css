@@ -202,6 +202,27 @@
 .stagger > *:nth-child(8) { animation-delay: 0.3s; }
 .stagger > *:nth-child(n + 9) { animation-delay: 0.34s; }
 
+/* Just-saved row: soft teal wash that fades out so the new entry visibly
+   "lands". Side shadows bleed the wash past the list's padding without
+   shifting layout. Declared after .stagger so it wins inside lists. */
+.flash-row,
+.stagger > .flash-row {
+  border-radius: 10px;
+  animation: flash-row 1.6s ease-out;
+  animation-delay: 0s;
+}
+@keyframes flash-row {
+  0%,
+  35% {
+    background-color: var(--color-primary-tint);
+    box-shadow: -10px 0 0 0 var(--color-primary-tint), 10px 0 0 0 var(--color-primary-tint);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: -10px 0 0 0 transparent, 10px 0 0 0 transparent;
+  }
+}
+
 ::selection {
   background: #e1f5ee;
   color: #04342c;

@@ -65,6 +65,11 @@ export type AppPreferences = {
   landingPage: LandingPagePref
   /* Off hides the CSV bulk-entry buttons on the ledger screen entirely. */
   csvImportEnabled: boolean
+  /* Mode preselected on every new Received entry. Bank/UPI also preselect
+     that type's starred account from Settings → Banks & UPI. Unset (older
+     data) falls back to the starred account's type — the pre-existing
+     behavior — via the store's resolved `defaultPaymentMode`. */
+  defaultPaymentMode?: PaymentMode
 }
 
 export const defaultPreferences: AppPreferences = {

@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Download,
   FileText,
+  ListPlus,
   Pencil,
   Phone,
   Trash2,
@@ -27,11 +28,17 @@ export function LedgerScreen({
   onBack,
   onEditCustomer,
   onEntry,
+  onBulkEntry,
+  flashEntryId,
 }: {
   customerId: string
   onBack: () => void
   onEditCustomer: () => void
   onEntry: (draft: EntryDraft) => void
+  /* Opens the bulk entry screen locked to this customer. */
+  onBulkEntry: () => void
+  /* Just-saved entry to highlight in the list. */
+  flashEntryId: string
 }) {
   const { t, fmt, language, customers, entries, range, setRange, isAdmin, deleteCustomer, deleteEntry, preferences } = useApp()
   const [confirm, setConfirm] = React.useState<{ kind: 'customer' | 'entry'; id: string } | null>(null)
@@ -76,6 +83,15 @@ export function LedgerScreen({
         </div>
         {isAdmin && (
           <div className="flex gap-1.5">
+            <Button
+              size="iconSm"
+              variant="ghost"
+              aria-label={t('bulkEntry')}
+              title={t('bulkEntry')}
+              onClick={onBulkEntry}
+            >
+              <ListPlus className="h-4 w-4" />
+            </Button>
             {preferences.csvImportEnabled && (
               <>
                 <Button
@@ -194,7 +210,13 @@ export function LedgerScreen({
         ) : (
           <div className="stagger px-4">
             {displayRows.map((entry) => (
-              <div key={entry.id} className="group flex items-center gap-3 border-b border-border py-3 last:border-b-0">
+              <div
+                key={entry.id}
+                className={cn(
+                  'group flex items-center gap-3 border-b border-border py-3 last:border-b-0',
+                  entry.id === flashEntryId && 'flash-row',
+                )}
+              >
                 <div
                   className={cn(
                     'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',

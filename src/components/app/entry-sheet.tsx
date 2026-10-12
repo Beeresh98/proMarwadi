@@ -2,7 +2,7 @@ import * as React from 'react'
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import type { EntryType, LedgerEntry, PaymentAccount, PaymentMode } from '../../lib/types'
 import { today } from '../../lib/ledger'
-import { useApp } from '../../lib/store'
+import { useApp, type EntryInput } from '../../lib/store'
 import { Button } from '../ui/button'
 import { DatePicker } from '../ui/date-picker'
 import { Field, Input } from '../ui/form'
@@ -15,14 +15,51 @@ export type EntryDraft = {
   type: EntryType
 }
 
+/* Starred account of that type, else the first one — what a Bank/UPI
+   payment preselects. */
+export function defaultAccountFor(paymentAccounts: PaymentAccount[], mode: PaymentMode): PaymentAccount | undefined {
+  if (mode === 'cash') return undefined
+  const list = paymentAccounts.filter((account) => account.type === mode)
+  return list.find((account) => account.isDefault) ?? list[0]
+}
+
+/* Shared by the entry sheet and the bulk entry screen so both shape
+   payment fields identically. Explicit undefined so editing an entry
+   replaces stale mode fields. */
+export function toEntryInput(form: {
+  customerId: string
+  date: string
+  type: EntryType
+  amount: number
+  note: string
+  paymentMode: PaymentMode
+  bankName: string
+  upiApp: string
+}): EntryInput {
+  const credit = form.type === 'credit'
+  return {
+    customerId: form.customerId,
+    date: form.date,
+    type: form.type,
+    amount: form.amount,
+    note: form.note.trim(),
+    paymentMode: credit ? form.paymentMode : undefined,
+    bankName: credit && form.paymentMode === 'bank' ? form.bankName.trim() : undefined,
+    upiApp: credit && form.paymentMode === 'upi' ? form.upiApp : undefined,
+  }
+}
+
 export function EntrySheet({
   draft,
   onClose,
+  onSaved,
 }: {
   draft: EntryDraft | null
   onClose: () => void
+  /* Fires after a successful save; isNew is false for edits. */
+  onSaved?: (entry: LedgerEntry, isNew: boolean) => void
 }) {
-  const { t, customers, entries, addEntry, updateEntry, isAdmin, paymentAccounts, defaultPaymentAccount } = useApp()
+  const { t, customers, entries, addEntry, updateEntry, isAdmin, paymentAccounts, defaultPaymentMode } = useApp()
   const { language, preferences } = useApp()
   const editing: LedgerEntry | undefined = draft?.entryId
     ? entries.find((entry) => entry.id === draft.entryId)
@@ -30,10 +67,6 @@ export function EntrySheet({
 
   const bankAccounts = paymentAccounts.filter((account) => account.type === 'bank')
   const upiAccounts = paymentAccounts.filter((account) => account.type === 'upi')
-  function defaultAccountFor(type: PaymentMode): PaymentAccount | undefined {
-    const list = type === 'bank' ? bankAccounts : type === 'upi' ? upiAccounts : []
-    return list.find((account) => account.isDefault) ?? list[0]
-  }
 
   const [form, setForm] = React.useState({
     customerId: '',
@@ -61,8 +94,10 @@ export function EntrySheet({
         upiApp: editing.upiApp ?? '',
       })
     } else {
-      // preselect the admin's configured default account, per Settings → Banks & UPI
-      const account = defaultPaymentAccount
+      // preselect the admin's default payment mode (and that mode's starred
+      // account), per Settings → Banks & UPI
+      const mode = defaultPaymentMode
+      const account = defaultAccountFor(paymentAccounts, mode)
       setForm({
         customerId: draft.customerId || customers[0]?.id || '',
         date: today,
@@ -70,9 +105,9 @@ export function EntrySheet({
         type: isAdmin ? draft.type : 'credit',
         amount: '',
         note: '',
-        paymentMode: account?.type ?? 'cash',
-        bankName: account?.type === 'bank' ? account.name : '',
-        upiApp: account?.type === 'upi' ? account.name : '',
+        paymentMode: mode,
+        bankName: mode === 'bank' ? (account?.name ?? '') : '',
+        upiApp: mode === 'upi' ? (account?.name ?? '') : '',
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,21 +131,16 @@ export function EntrySheet({
 
   function submit() {
     if (!valid) return
-    const credit = form.type === 'credit'
-    const input = {
-      customerId: form.customerId,
-      date: form.date,
-      type: form.type,
-      amount,
-      note: form.note.trim(),
-      // explicit undefined so editing an entry replaces stale mode fields
-      paymentMode: credit ? form.paymentMode : undefined,
-      bankName: credit && form.paymentMode === 'bank' ? form.bankName.trim() : undefined,
-      upiApp: credit && form.paymentMode === 'upi' ? form.upiApp : undefined,
+    const input = toEntryInput({ ...form, amount })
+    if (editing) {
+      updateEntry(editing.id, input)
+      onClose()
+      onSaved?.({ ...editing, ...input }, false)
+    } else {
+      const entry = addEntry(input)
+      onClose()
+      onSaved?.(entry, true)
     }
-    if (editing) updateEntry(editing.id, input)
-    else addEntry(input)
-    onClose()
   }
 
   return (
@@ -195,7 +225,7 @@ export function EntrySheet({
                 value={form.paymentMode}
                 onChange={(paymentMode) => {
                   // switching mode preselects that mode's configured default account
-                  const account = defaultAccountFor(paymentMode)
+                  const account = defaultAccountFor(paymentAccounts, paymentMode)
                   setForm((current) => ({
                     ...current,
                     paymentMode,
