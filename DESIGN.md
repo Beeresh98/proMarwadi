@@ -62,6 +62,7 @@ Defined in `src/index.css`; everything respects `prefers-reduced-motion`.
 - Mobile: single column, bottom tab bar, sticky give/got action bar above it.
 - Bulk entry (`screens/bulk-entry.tsx`) is a full screen, not a sheet: one composer (date and customer
   stay between entries, separate Bill − / Received + amount fields) above a list of added entries
-  (table columns on sm+), sticky totals + Save.
+  (table columns when the column is wide enough), sticky totals + Save. On desktop a sticky right panel
+  shows the customer's recent ledger with unsaved entries (dashed teal) and the balance after save.
 - Desktop (`lg:`): fixed 240px sidebar, content centered at max-w-2xl.
 - Radii: 8px controls (`--radius-control`), 14px cards (`--radius-card`).

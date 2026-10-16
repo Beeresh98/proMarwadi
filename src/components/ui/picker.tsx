@@ -140,11 +140,13 @@ export function Picker({
   const ref = useDismissable(open, close)
   const anchorRef = React.useRef<HTMLButtonElement>(null)
   const searchRef = React.useRef<HTMLInputElement>(null)
+  const listRef = React.useRef<HTMLDivElement>(null)
+  // keyboard highlight for searchable pickers: type, ↑/↓, Enter picks
+  const [activeIndex, setActiveIndex] = React.useState(0)
 
   React.useEffect(() => {
-    if (open && searchable) searchRef.current?.focus()
     if (!open) setQuery('')
-  }, [open, searchable])
+  }, [open])
 
   const selected = options.find((option) => option.value === value)
   const visible = query.trim()
@@ -154,6 +156,32 @@ export function Picker({
           `${option.label} ${option.hint ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
       )
     : options
+
+  React.useEffect(() => {
+    // start on the current choice when opening, on the top match while typing
+    if (!open) return
+    const current = query.trim() ? -1 : visible.findIndex((option) => option.value === value)
+    setActiveIndex(Math.max(0, current))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, query])
+
+  React.useEffect(() => {
+    listRef.current?.querySelector(`[data-index="${activeIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
+
+  function onSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      setActiveIndex((current) => Math.min(Math.max(current + step, 0), Math.max(visible.length - 1, 0)))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      const option = visible[activeIndex]
+      if (!option) return
+      onChange(option.value)
+      close()
+    }
+  }
 
   return (
     <div ref={ref} className={cn('relative', className)}>
@@ -177,32 +205,45 @@ export function Picker({
         />
       </button>
 
-      <Popover open={open} anchorRef={anchorRef} align={align} width={menuWidth} className="max-h-72 overflow-auto p-1.5">
-        <div role="listbox">
-          {searchable && (
-            <div className="sticky top-0 z-10 -m-1.5 mb-1 border-b border-border bg-card p-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <input
-                  ref={searchRef}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={searchPlaceholder}
-                  className="h-9 w-full rounded-lg border border-input bg-fill pl-8 pr-2 text-sm outline-none focus:border-primary"
-                />
-              </div>
+      {/* search sits outside the scrolling list, so options never show
+          through above it the way they did when it was a sticky header */}
+      <Popover
+        open={open}
+        anchorRef={anchorRef}
+        align={align}
+        width={menuWidth}
+        className="flex max-h-80 flex-col overflow-hidden"
+      >
+        {searchable && (
+          <div className="shrink-0 border-b border-border p-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <input
+                ref={searchRef}
+                // the popover paints a frame after `open` flips (it waits to
+                // measure the anchor), so focus on mount rather than in an effect
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={onSearchKeyDown}
+                placeholder={searchPlaceholder}
+                className="h-9 w-full rounded-lg border border-input bg-fill pl-8 pr-2 text-sm outline-none focus:border-primary"
+              />
             </div>
-          )}
+          </div>
+        )}
+        <div ref={listRef} role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {visible.length === 0 && (
             <p className="px-3 py-3 text-sm text-muted-foreground">—</p>
           )}
-          {visible.map((option) => {
+          {visible.map((option, index) => {
             const isSelected = option.value === value
             return (
               <button
                 key={option.value}
                 type="button"
                 role="option"
+                data-index={index}
                 aria-selected={isSelected}
                 onClick={() => {
                   onChange(option.value)
@@ -210,7 +251,9 @@ export function Picker({
                 }}
                 className={cn(
                   'pressable flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-[15px] hover:bg-fill',
+                  searchable && index === activeIndex && !isSelected && 'bg-fill ring-1 ring-inset ring-border-strong',
                   isSelected && 'bg-primary-tint text-primary-pressed',
+                  searchable && index === activeIndex && isSelected && 'ring-1 ring-inset ring-primary-accent',
                   option.action &&
                     'mt-1 rounded-t-none border-t border-border font-medium text-primary hover:bg-primary-tint',
                 )}

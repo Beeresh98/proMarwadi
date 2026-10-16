@@ -198,7 +198,13 @@ function App() {
         })}
       </aside>
 
-      <div className="mx-auto w-full max-w-xl flex-1 print:max-w-none lg:max-w-3xl">
+      <div
+        className={cn(
+          'mx-auto w-full max-w-xl flex-1 print:max-w-none',
+          // bulk entry puts the customer's history beside the composer
+          bulk && isAdmin ? 'lg:max-w-6xl' : 'lg:max-w-3xl',
+        )}
+      >
         <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur print:hidden lg:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <h1 className="text-[17px] font-medium text-primary-pressed">{t('appName')}</h1>
@@ -220,6 +226,12 @@ function App() {
               initialCustomerId={bulk.customerId}
               onBack={() => guardLeave(closeBulk)}
               onDirtyChange={setBulkDirty}
+              onOpenLedger={(customerId) =>
+                guardLeave(() => {
+                  closeBulk()
+                  setOpenCustomerId(customerId)
+                })
+              }
             />
           ) : openCustomer ? (
             <LedgerScreen
