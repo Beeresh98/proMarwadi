@@ -37,6 +37,14 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
 
+## Remote on/off switch
+
+In the Firebase console → Firestore, create the document `meta/appStatus` with a boolean field `live`.
+Set `live` to `false` and the next time anyone opens the app they see a 15-second spinner and then a
+"No connection" screen (Retry never gets through). Set it back to `true` (or delete the document) to
+switch the app on again. If the status can't be read (offline/timeout) the app loads normally.
+Deploy the rule first: `firebase deploy --only firestore:rules`.
+
 ## Build
 
 ```bash

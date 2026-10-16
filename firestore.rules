@@ -74,6 +74,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // remote on/off switch ({ live: bool }) — readable before sign-in so the
+    // app can check it on launch; written only from the Firebase console
+    match /meta/appStatus {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // CSV bulk-entry audit log — admin-only; never deleted, only marked reversed
     match /importBatches/{batchId} {
       allow read: if isAdmin();
